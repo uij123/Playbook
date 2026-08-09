@@ -1,0 +1,74 @@
+{
+  "playbook": "synthetic-textedit",
+  "version": "0.1.0",
+  "description": "okay I'm opening TextEdit to write the monthly note new document now I type the revenue figure which changes every month this month it's forty two hundred",
+  "created": "2026-08-09T14:00:00Z",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Switch to TextEdit",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      },
+      "notes": "okay I'm opening TextEdit to write"
+    },
+    {
+      "id": "s2",
+      "intent": "Press cmd+n",
+      "do": "ui.key",
+      "target": {
+        "app": "TextEdit"
+      },
+      "value": "cmd+n",
+      "notes": "write the monthly note new document"
+    },
+    {
+      "id": "s3",
+      "intent": "Click the text area in TextEdit",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 700,
+          "y": 400
+        }
+      },
+      "notes": "new document now I"
+    },
+    {
+      "id": "s4",
+      "intent": "Type \"Revenue this month: 4200\"",
+      "do": "ui.type",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 700,
+          "y": 400
+        }
+      },
+      "value": "Revenue this month: 4200",
+      "verify": {
+        "element_value_contains": "Revenue this month: 4200"
+      },
+      "notes": "document now I type the revenue figure which changes every month this month it's"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{"t": 300, "type": "key", "chars": "\r", "key_code": 36, "app": "Terminal", "bundle_id": "com.apple.Terminal"}
+{"t": 1500, "type": "app_activate", "app": "TextEdit", "bundle_id": "com.apple.TextEdit"}
+{"t": 6200, "type": "key", "chars": "n", "key_code": 45, "mods": ["cmd"], "app": "TextEdit"}
+{"t": 8000, "type": "click", "button": "left", "clicks": 1, "x": 700, "y": 400, "app": "TextEdit", "bundle_id": "com.apple.TextEdit", "window_title": "Untitled", "element": {"role": "AXTextArea", "value": "", "frame": {"x": 312, "y": 150, "w": 1104, "h": 800}, "path": [{"role": "AXScrollArea"}, {"role": "AXWindow", "title": "Untitled"}]}, "screenshot": "shots/00001.png"}
+{"t": 9500, "type": "key", "chars": "R", "key_code": 15, "mods": ["shift"], "app": "TextEdit"}
+{"t": 9620, "type": "key", "chars": "e", "key_code": 14, "app": "TextEdit"}
+{"t": 9740, "type": "key", "chars": "v", "key_code": 9, "app": "TextEdit"}
+{"t": 9860, "type": "key", "chars": "e", "key_code": 14, "app": "TextEdit"}
+{"t": 9980, "type": "key", "chars": "n", "key_code": 45, "app": "TextEdit"}
+{"t": 10100, "type": "key", "chars": "u", "key_code": 32, "app": "TextEdit"}
+{"t": 10220, "type": "key", "chars": "e", "key_code": 14, "app": "TextEdit"}
+{"t": 10340, "type": "key", "chars": " ", "key_code": 49, "app": "TextEdit"}
+{"t": 10460, "type": "key", "chars": "t", "key_code": 17, "app": "TextEdit"}
+{"t": 10580, "type": "key", "chars": "h", "key_code": 4, "app": "TextEdit"}
+{"t": 10700, "type": "key", "chars": "i", "key_code": 34, "app": "TextEdit"}
+{"t": 10820, "type": "key", "chars": "s", "key_code": 1, "app": "TextEdit"}
+{"t": 10940, "type": "key", "chars": " ", "key_code": 49, "app": "TextEdit"}
+{"t": 11060, "type": "key", "chars": "m", "key_code": 46, "app": "TextEdit"}
+{"t": 11180, "type": "key", "chars": "o", "key_code": 31, "app": "TextEdit"}
+{"t": 11300, "type": "key", "chars": "n", "key_code": 45, "app": "TextEdit"}
+{"t": 11420, "type": "key", "chars": "t", "key_code": 17, "app": "TextEdit"}
+{"t": 11540, "type": "key", "chars": "h", "key_code": 4, "app": "TextEdit"}
+{"t": 11660, "type": "key", "chars": ":", "key_code": 41, "mods": ["shift"], "app": "TextEdit"}
+{"t": 11780, "type": "key", "chars": " ", "key_code": 49, "app": "TextEdit"}
+{"t": 11900, "type": "key", "chars": "4", "key_code": 21, "app": "TextEdit"}
+{"t": 12020, "type": "key", "chars": "2", "key_code": 19, "app": "TextEdit"}
+{"t": 12140, "type": "key", "chars": "0", "key_code": 29, "app": "TextEdit"}
+{"t": 12260, "type": "key", "chars": "0", "key_code": 29, "app": "TextEdit"}
+{"t": 12520, "type": "key", "chars": "9", "key_code": 25, "app": "TextEdit"}
+{"t": 12700, "type": "key", "chars": "\u007f", "key_code": 51, "app": "TextEdit"}
+{"t": 19500, "type": "app_activate", "app": "Terminal", "bundle_id": "com.apple.Terminal"}
+{"t": 20100, "type": "key", "chars": "", "key_code": 8, "mods": ["ctrl"], "app": "Terminal"}

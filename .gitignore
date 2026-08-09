@@ -1,0 +1,16 @@
+# Recordings contain screen captures and transcripts — never committed (privacy principle)
+recordings/*
+!recordings/.gitkeep
+
+# Replay run reports
+runs/*
+!runs/.gitkeep
+
+# Build output
+native/.build/
+cli/dist/
+cli/node_modules/
+
+# OS noise
+.DS_Store
+*.log
