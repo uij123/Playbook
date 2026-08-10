@@ -44,20 +44,20 @@ Set `ANTHROPIC_API_KEY` for model-refined compilation (`PLAYBOOKS_MODEL` overrid
 
 Recording input and screenshots work with the permissions your terminal already has. **On-device voice is different:** macOS attributes microphone/speech access to the *responsible app*, and a CLI spawned from a terminal has no identity of its own — so the OS blocks it. `pb record --voice` detects this and keeps recording without narration rather than failing. To capture voice, the recorder must run as its own app.
 
-The catch that used to make this painful: an ad-hoc-signed app gets a new code hash on every rebuild, and macOS ties Accessibility grants to that hash — so every `make bundle` reset your permissions. The fix is a **stable signing identity**, set up once:
+The catch that used to make this painful: an ad-hoc-signed app gets a new code hash on every rebuild (and a bundle rebuilt at a transient path reads as new), and macOS ties Accessibility grants to the app's hash + path — so every `make bundle` reset your permissions. The fix is a **stable signing identity** plus a **permanent install path**, set up once:
 
 ```bash
 make signing-setup   # once per machine: creates a self-signed code-signing identity
-make bundle          # → native/.build/pb-record.app, signed with that identity
+make bundle          # → ~/Applications/Playbooks/pb-record.app, signed + updated in place
 ```
 
 Now grant the **app** (not your terminal) its four permissions, once, in System Settings → Privacy & Security — Accessibility, Screen Recording, Microphone, Speech Recognition. Trigger the prompts with:
 
 ```bash
-open native/.build/pb-record.app --args --out /tmp/pb-grant-check --voice
+open ~/Applications/Playbooks/pb-record.app --args --out /tmp/pb-grant-check --voice
 ```
 
-Because the app's identity is stable, **those grants survive every future rebuild** — no more re-granting. (Verified: two different binaries signed by the same identity produce a byte-identical Designated Requirement, which is what TCC keys the grant on.)
+Because the app's identity and path are both stable, **those grants survive every future rebuild** — no more re-granting. (Verified end to end: after granting once, a rebuild with a genuinely different code hash — same Designated Requirement — passed all four gates with zero re-granting and transcribed narration on-device.)
 
 Wiring `pb record` to drive the bundle automatically is the next packaging step. For distribution to other machines, swap the self-signed identity for an Apple **Developer ID** and notarize — one line in `scripts/build-app.sh` — which also clears Gatekeeper warnings.
 
