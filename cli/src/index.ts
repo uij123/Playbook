@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -9,6 +10,10 @@ import { compileSession } from "./compile.js";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const RECORD_BIN = path.join(ROOT, "native", ".build", "release", "pb-record");
 const REPLAY_BIN = path.join(ROOT, "native", ".build", "release", "pb-replay");
+// The signed .app carries its own TCC identity, which on-device voice requires
+// (a shell-spawned binary is attributed to the host terminal, which has no
+// speech entitlement). Built by `make bundle` at a stable path so grants persist.
+const RECORD_APP = path.join(os.homedir(), "Applications", "Playbooks", "pb-record.app");
 
 function ensureBinary(bin: string): void {
   if (!fs.existsSync(bin)) {
@@ -25,6 +30,96 @@ function runBinary(bin: string, args: string[]): void {
   child.on("exit", (code, signal) => {
     process.exit(signal ? 130 : code ?? 0);
   });
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Find the pb-record process for this session (launched detached via `open`). */
+function findRecorderPid(sessionDir: string): number | null {
+  const res = spawnSync("pgrep", ["-f", sessionDir], { encoding: "utf8" });
+  if (res.status !== 0 || !res.stdout.trim()) return null;
+  for (const pid of res.stdout.trim().split("\n").map(Number).filter(Boolean)) {
+    if (pid === process.pid) continue; // our own argv contains the dir too
+    const comm = spawnSync("ps", ["-o", "comm=", "-p", String(pid)], { encoding: "utf8" })
+      .stdout.trim();
+    if (comm.endsWith("pb-record")) return pid;
+  }
+  return null;
+}
+
+/**
+ * Drive the signed .app (voice path). `open` launches it as its own TCC subject
+ * and returns immediately, so we locate its pid, then forward Ctrl+C to it and
+ * wait for the session to finalize (meta.json).
+ */
+function runViaBundle(sessionDir: string, appArgs: string[]): void {
+  const open = spawnSync("open", [RECORD_APP, "--args", ...appArgs], { encoding: "utf8" });
+  if (open.status !== 0) {
+    console.error(`error: could not launch ${path.basename(RECORD_APP)}: ${open.stderr.trim()}`);
+    process.exit(1);
+  }
+
+  let pid: number | null = null;
+  const deadline = Date.now() + 6000;
+  const awaitStart = () => {
+    pid = findRecorderPid(sessionDir);
+    if (pid) {
+      console.log(`● Recording (voice, via pb-record.app) → ${sessionDir}`);
+      console.log("  Do the task now. Ctrl+C to stop.");
+      const alive = setInterval(() => {
+        if (pid && !isAlive(pid)) {
+          clearInterval(alive);
+          finalize();
+        }
+      }, 700);
+    } else if (Date.now() < deadline) {
+      setTimeout(awaitStart, 300);
+    } else {
+      console.error("error: the recorder app did not start.");
+      console.error("  It likely needs a one-time Accessibility grant:");
+      console.error("  System Settings → Privacy & Security → Accessibility → enable pb-record.");
+      console.error(`  (trigger the prompt: open ${RECORD_APP} --args --out /tmp/pb --voice )`);
+      process.exit(2);
+    }
+  };
+
+  let finalized = false;
+  const finalize = () => {
+    if (finalized) return;
+    finalized = true;
+    const dl = Date.now() + 5000;
+    const check = () => {
+      if (fs.existsSync(path.join(sessionDir, "meta.json")) || Date.now() > dl) {
+        const events = fs.existsSync(path.join(sessionDir, "events.jsonl"));
+        console.log(`\n■ Stopped → ${sessionDir}${events ? "" : " (no events captured)"}`);
+        process.exit(0);
+      } else {
+        setTimeout(check, 200);
+      }
+    };
+    check();
+  };
+
+  const stop = () => {
+    if (pid) {
+      try {
+        process.kill(pid, "SIGINT");
+      } catch {
+        /* already gone */
+      }
+    }
+    finalize();
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  awaitStart();
 }
 
 function collect(value: string, previous: string[]): string[] {
@@ -45,7 +140,6 @@ program
   .option("--locale <locale>", "narration locale, e.g. en-US or fr-FR", "en-US")
   .option("--no-shots", "skip per-click screenshots")
   .action((opts: { name: string; voice: boolean; locale: string; shots: boolean }) => {
-    ensureBinary(RECORD_BIN);
     const stamp = new Date()
       .toISOString()
       .slice(0, 16)
@@ -54,6 +148,23 @@ program
     const args = ["--out", dir];
     if (opts.voice) args.push("--voice", "--locale", opts.locale);
     if (!opts.shots) args.push("--no-shots");
+
+    // Voice needs the app's own permission identity → drive the signed bundle.
+    // Everything else runs the binary directly (inherits the terminal's grants).
+    if (opts.voice) {
+      if (fs.existsSync(RECORD_APP)) {
+        runViaBundle(dir, args);
+        return;
+      }
+      console.warn(
+        "note: voice needs the signed app bundle, which isn't built.\n" +
+          "      run `make bundle` (and `make signing-setup` once) to enable voice.\n" +
+          "      recording without narration for now.",
+      );
+      const i = args.indexOf("--voice");
+      if (i >= 0) args.splice(i, 3); // drop --voice --locale <x>
+    }
+    ensureBinary(RECORD_BIN);
     runBinary(RECORD_BIN, args);
   });
 

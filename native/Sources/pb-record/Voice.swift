@@ -35,6 +35,9 @@ final class VoiceCapture {
     private var pending: [TranscriptSeg] = []
     private var chunkOffset: TimeInterval = 0
     private var running = false
+    // Signaled when the recognizer delivers its final result after stop() ends
+    // the audio, so stop() can flush the tail instead of cancelling too early.
+    private let finalSem = DispatchSemaphore(value: 0)
 
     init(locale: String, sessionStart: Date, outDir: URL) throws {
         guard let rec = SFSpeechRecognizer(locale: Locale(identifier: locale)) else {
@@ -107,8 +110,13 @@ final class VoiceCapture {
                     self.pending = []
                 }
                 self.lock.unlock()
-                if result.isFinal && self.running {
-                    self.startChunk()
+                if result.isFinal {
+                    if self.running {
+                        self.startChunk()
+                    } else {
+                        // stop() ended the audio and we've now flushed the tail.
+                        self.finalSem.signal()
+                    }
                     return
                 }
             }
@@ -121,6 +129,8 @@ final class VoiceCapture {
                     DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak self] in
                         self?.startChunkIfCurrent(req)
                     }
+                } else {
+                    self.finalSem.signal()
                 }
             }
         }
@@ -141,7 +151,10 @@ final class VoiceCapture {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         request?.endAudio()
-        Thread.sleep(forTimeInterval: 0.8)
+        // Wait for the recognizer to deliver its final result (or error) for the
+        // ended audio, up to a bound, instead of cancelling after a fixed delay
+        // and dropping the tail of the transcript.
+        _ = finalSem.wait(timeout: .now() + 6)
         task?.cancel()
         lock.lock()
         let out = (finished + pending).sorted { $0.t0 < $1.t0 }
