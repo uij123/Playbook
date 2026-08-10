@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { compileDraft } from "./segment.js";
-import { AnthropicProvider, ModelProvider, NullProvider } from "./providers.js";
+import { NullProvider, selectProvider } from "./providers.js";
 import {
   DraftExtras,
   PBStep,
@@ -136,15 +136,14 @@ export async function compileSession(
     throw new Error("no steps could be compiled from this recording (after trimming terminal activity)");
   }
 
-  let provider: ModelProvider = new NullProvider();
-  if (!opts.noLlm) {
-    if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
-      provider = new AnthropicProvider(opts.model);
-    } else {
-      console.warn(
-        "note: no Anthropic credentials (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN) — heuristic compile only (pass --no-llm to silence this)",
-      );
-    }
+  const provider = selectProvider(opts.model, opts.noLlm);
+  if (!opts.noLlm && provider instanceof NullProvider) {
+    console.warn(
+      "note: no model configured — heuristic compile only.\n" +
+        "      set ANTHROPIC_API_KEY, or PLAYBOOKS_OPENAI_BASE_URL for a local/OpenAI-compatible model\n" +
+        "      (e.g. Ollama: PLAYBOOKS_OPENAI_BASE_URL=http://localhost:11434/v1 PLAYBOOKS_MODEL=llama3.1).\n" +
+        "      pass --no-llm to silence this.",
+    );
   }
 
   let refined = draft;

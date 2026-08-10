@@ -38,7 +38,18 @@ Then:
 ./pb run playbooks/my-flow.pb.json     # replay it; add --strict for the honest version
 ```
 
-Set `ANTHROPIC_API_KEY` for model-refined compilation (`PLAYBOOKS_MODEL` overrides the default model). `--no-llm` compiles heuristically.
+### Choosing the model (any model)
+
+The compiler's refinement stage is model-agnostic — a 3-method provider interface with two adapters:
+
+- **Anthropic** — set `ANTHROPIC_API_KEY` (default model `claude-opus-5`, override with `PLAYBOOKS_MODEL`).
+- **OpenAI-compatible** — any server speaking the OpenAI chat-completions API: OpenAI, or a **fully local** model via Ollama / LM Studio / vLLM / llama.cpp so nothing leaves the machine:
+
+  ```bash
+  PLAYBOOKS_OPENAI_BASE_URL=http://localhost:11434/v1 PLAYBOOKS_MODEL=llama3.1 ./pb compile <session>
+  ```
+
+`PLAYBOOKS_PROVIDER=anthropic|openai|none` forces the choice; otherwise it's auto-detected from the environment. `--no-llm` skips refinement entirely (pure heuristic compile — no network, no key).
 
 ## Voice narration on macOS (and grant-once permissions)
 
