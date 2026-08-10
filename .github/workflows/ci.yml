@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    # Native recorder/replayer are macOS-only (CGEventTap, Accessibility, AppKit).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build native binaries
+        run: swift build -c release
+        working-directory: native
+
+      - name: Build the .app bundle
+        run: make bundle
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install compiler deps
+        run: npm install --no-fund --no-audit
+        working-directory: cli
+
+      # Compiler tests are pure and deterministic. Record/replay need a
+      # real display + granted TCC permissions, so they are exercised on a
+      # developer machine (the P0 gate), not in CI.
+      - name: Run compiler tests
+        run: npm test
+        working-directory: cli
