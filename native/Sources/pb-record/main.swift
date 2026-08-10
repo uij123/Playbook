@@ -31,6 +31,13 @@ func opt(_ name: String) -> String? {
 // speech-recognition usage string — common under IDE/embedded terminals.
 // Probing in a child turns that crash into a graceful "no voice" downgrade.
 if flag("--voice-probe") {
+    // Optional marker path so a detached (open-launched) probe can report back.
+    let markerPath = opt("--marker")
+    func report(_ text: String) {
+        if let markerPath {
+            try? text.write(toFile: markerPath, atomically: true, encoding: .utf8)
+        }
+    }
     var status = SFSpeechRecognizerAuthorizationStatus.notDetermined
     let sem = DispatchSemaphore(value: 0)
     SFSpeechRecognizer.requestAuthorization { s in
@@ -38,7 +45,15 @@ if flag("--voice-probe") {
         sem.signal()
     }
     _ = sem.wait(timeout: .now() + 60)
-    print(status == .authorized ? "authorized" : "denied")
+    let name: String
+    switch status {
+    case .authorized: name = "authorized"
+    case .denied: name = "denied"
+    case .restricted: name = "restricted"
+    default: name = "notDetermined"
+    }
+    report(name)
+    print(name)
     exit(status == .authorized ? 0 : 3)
 }
 
