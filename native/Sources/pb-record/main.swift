@@ -106,25 +106,33 @@ do {
 }
 
 if voiceOn {
-    let probe = Process()
-    let selfPath = Bundle.main.executablePath ?? CommandLine.arguments[0]
-    probe.executableURL = URL(fileURLWithPath: selfPath)
-    probe.arguments = ["--voice-probe"]
-    var probeOK = false
-    do {
-        try probe.run()
-        probe.waitUntilExit()
-        probeOK = probe.terminationReason == .exit && probe.terminationStatus == 0
-        if !probeOK {
-            let why = probe.terminationReason == .uncaughtSignal
-                ? "this terminal/host app lacks speech-recognition entitlements"
-                : "speech recognition permission denied"
-            print("warning: voice narration unavailable (\(why)) — recording continues without it")
+    // When we ARE the bundled .app (launched via `open`, our own TCC identity),
+    // speech is available directly — asking is safe and won't crash. Probing via
+    // a forked child would actually give a false negative, because a posix_spawn
+    // child isn't LaunchServices-launched and TCC attributes it to a different
+    // responsible app. So only probe in the bare-CLI case, where touching speech
+    // in-process could SIGABRT the whole recorder.
+    let bundled = Bundle.main.bundleIdentifier != nil
+    var voiceUsable = bundled
+    if !bundled {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        probe.arguments = ["--voice-probe"]
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            voiceUsable = probe.terminationReason == .exit && probe.terminationStatus == 0
+            if !voiceUsable {
+                let why = probe.terminationReason == .uncaughtSignal
+                    ? "the host app (this terminal) has no speech-recognition entitlement — run the packaged .app for voice (see README)"
+                    : "speech recognition permission denied"
+                print("warning: voice narration unavailable (\(why)) — recording continues without it")
+            }
+        } catch {
+            print("warning: could not probe voice availability (\(error)) — continuing without narration")
         }
-    } catch {
-        print("warning: could not probe voice availability (\(error)) — continuing without narration")
     }
-    if probeOK {
+    if voiceUsable {
         do {
             let v = try VoiceCapture(locale: locale, sessionStart: recorder.start, outDir: outDir)
             try v.start()
