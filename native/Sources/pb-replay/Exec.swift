@@ -147,12 +147,15 @@ final class Exec {
                 let chunk = Array(utf16[idx..<min(idx + 16, utf16.count)])
                 for keyDown in [true, false] {
                     let ev = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: keyDown)
+                    // A stale modifier from a preceding chord turns typed text
+                    // into menu shortcuts — force a clean flag state.
+                    ev?.flags = []
                     chunk.withUnsafeBufferPointer { buf in
                         ev?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: buf.baseAddress)
                     }
                     ev?.post(tap: .cghidEventTap)
                 }
-                usleep(25_000)
+                usleep(30_000)
                 idx += 16
             }
         }

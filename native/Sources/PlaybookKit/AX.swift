@@ -154,7 +154,18 @@ public enum AX {
         var roots: [AXUIElement] = []
         let wins = windows(pid: pid)
         if let wtc = windowTitleContains?.lowercased(), !wtc.isEmpty {
-            let scoped = wins.filter { (title($0) ?? "").lowercased().contains(wtc) }
+            var scoped = wins.filter { (title($0) ?? "").lowercased().contains(wtc) }
+            // The focused window wins ties: several windows can match the same
+            // title fragment (Untitled, Untitled 2, …) and the user means the
+            // one in front.
+            if let fw = rawAttr(appElement(pid: pid), kAXFocusedWindowAttribute),
+               CFGetTypeID(fw) == AXUIElementGetTypeID() {
+                let focused = (fw as! AXUIElement)
+                if let idx = scoped.firstIndex(where: { CFEqual($0, focused) }), idx > 0 {
+                    scoped.remove(at: idx)
+                    scoped.insert(focused, at: 0)
+                }
+            }
             roots = scoped.isEmpty ? [appElement(pid: pid)] : scoped
         } else {
             roots = [appElement(pid: pid)]

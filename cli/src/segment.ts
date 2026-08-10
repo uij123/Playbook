@@ -74,7 +74,14 @@ function orderMods(mods: string[]): string[] {
 
 function windowFragment(title: string | undefined): string | undefined {
   if (!title) return undefined;
-  const frag = title.split(" — ")[0].split(" - ")[0].trim().slice(0, 40);
+  // Drop volatile suffixes: edited markers ("Untitled — Edited") and
+  // auto-numbered documents ("Untitled 2" must match the front "Untitled N").
+  const frag = title
+    .split(" — ")[0]
+    .split(" - ")[0]
+    .replace(/\s+\d+$/, "")
+    .trim()
+    .slice(0, 40);
   return frag.length > 0 ? frag : undefined;
 }
 

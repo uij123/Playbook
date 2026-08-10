@@ -1,0 +1,69 @@
+{
+  "playbook": "live-demo",
+  "version": "0.1.0",
+  "created": "2026-08-09T23:54:57Z",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Switch to TextEdit",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      }
+    },
+    {
+      "id": "s2",
+      "intent": "Press cmd+n",
+      "do": "ui.key",
+      "target": {
+        "app": "TextEdit"
+      },
+      "value": "cmd+n"
+    },
+    {
+      "id": "s3",
+      "intent": "Click the text area in TextEdit",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 474,
+          "y": 386
+        }
+      }
+    },
+    {
+      "id": "s4",
+      "intent": "Type \"Hello from Playbooks. Recorded once, rep…\"",
+      "do": "ui.type",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 474,
+          "y": 386
+        }
+      },
+      "value": "Hello from Playbooks. Recorded once, replayed forever.",
+      "verify": {
+        "element_value_contains": "Hello from Playbooks. Recorded once, replayed forever."
+      }
+    }
+  ]
+}
