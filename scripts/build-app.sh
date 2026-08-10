@@ -20,14 +20,22 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/native/.build/release/pb-record"
 PLIST="$ROOT/native/Support/pb-record-Info.plist"
-APP="$ROOT/native/.build/pb-record.app"
+
+# Install to a PERMANENT path and update in place. macOS ties an Accessibility
+# grant to the app at a specific path; wiping and recreating the bundle (even at
+# the same path, even with a stable signature) can read as a new app and drop the
+# grant — the "keeps asking, but it's already granted" loop. A fixed install
+# location whose Contents we refresh in place keeps the grant stable. `pb record`
+# and the docs reference this path.
+APP="$HOME/Applications/Playbooks/pb-record.app"
 
 if [ ! -x "$BIN" ]; then
     echo "error: $BIN not built — run \`make native\` first" >&2
     exit 1
 fi
 
-rm -rf "$APP"
+# Update in place: keep the bundle directory (and thus its TCC identity/path),
+# only refresh the binary and plist. Do NOT `rm -rf` the whole .app.
 mkdir -p "$APP/Contents/MacOS"
 cp "$PLIST" "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/pb-record"
