@@ -32,12 +32,26 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$PLIST" "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/pb-record"
 
-# Ad-hoc signature (identity "-"): enough to give the bundle a stable TCC identity
-# on the local machine. A real distribution build would sign with a Developer ID
-# and notarize; that is a P1 release task, not needed for local voice testing.
-codesign --force --sign - --identifier dev.playbooks.pb-record \
-    --options runtime "$APP" >/dev/null 2>&1 || \
+# Prefer the stable self-signed identity from setup-signing.sh: its Designated
+# Requirement is identity-based, so TCC grants survive every rebuild. Fall back to
+# ad-hoc only if setup hasn't been run (grants will then reset on each rebuild).
+# For distribution, replace IDENTITY with your "Developer ID Application: …" and
+# add --options runtime, then notarize the .app.
+IDENTITY="Playbooks Local Signing"
+KC="$HOME/Library/Keychains/playbooks-signing.keychain-db"
+# Plain `find-identity` (not `-v`) so the untrusted-but-usable self-signed cert
+# is detected; codesign signs with it fine despite the untrusted status.
+if security find-identity "$KC" 2>/dev/null | grep -q "$IDENTITY"; then
+    security unlock-keychain -p "playbooks-local" "$KC" 2>/dev/null || true
+    codesign --force --sign "$IDENTITY" --keychain "$KC" \
+        --identifier dev.playbooks.pb-record "$APP"
+    SIGNED_WITH="$IDENTITY (grants persist across rebuilds)"
+else
+    echo "note: stable signing identity not found — run 'make signing-setup' once"
+    echo "      so macOS permissions stop resetting. Falling back to ad-hoc."
     codesign --force --sign - --identifier dev.playbooks.pb-record "$APP"
+    SIGNED_WITH="ad-hoc (grants reset on each rebuild)"
+fi
 
 # Validate the result rather than trusting the copy.
 codesign --verify --strict "$APP"
@@ -55,7 +69,7 @@ if [ "$(otool -s __TEXT __info_plist "$APP/Contents/MacOS/pb-record" | wc -l)" -
 fi
 
 echo "✓ built $APP"
-echo "  identity: dev.playbooks.pb-record (ad-hoc signed)"
+echo "  signed with: $SIGNED_WITH"
 echo ""
 echo "To enable voice narration, grant the app these in System Settings →"
 echo "Privacy & Security (they attribute to the app, not your terminal):"
