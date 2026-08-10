@@ -40,23 +40,26 @@ Then:
 
 Set `ANTHROPIC_API_KEY` for model-refined compilation (`PLAYBOOKS_MODEL` overrides the default model). `--no-llm` compiles heuristically.
 
-## Voice narration on macOS
+## Voice narration on macOS (and grant-once permissions)
 
-Recording input and taking screenshots work with the permissions granted to your terminal. **On-device voice is different:** macOS attributes microphone/speech access to the *responsible app*, and a CLI spawned from a terminal has no identity of its own — so the OS blames (and blocks) the terminal. `pb record --voice` detects this and keeps recording without narration rather than failing.
+Recording input and screenshots work with the permissions your terminal already has. **On-device voice is different:** macOS attributes microphone/speech access to the *responsible app*, and a CLI spawned from a terminal has no identity of its own — so the OS blocks it. `pb record --voice` detects this and keeps recording without narration rather than failing. To capture voice, the recorder must run as its own app.
 
-To actually capture voice, package the recorder as its own app so it becomes its own permission subject:
+The catch that used to make this painful: an ad-hoc-signed app gets a new code hash on every rebuild, and macOS ties Accessibility grants to that hash — so every `make bundle` reset your permissions. The fix is a **stable signing identity**, set up once:
 
 ```bash
-make bundle   # → native/.build/pb-record.app (ad-hoc signed)
+make signing-setup   # once per machine: creates a self-signed code-signing identity
+make bundle          # → native/.build/pb-record.app, signed with that identity
 ```
 
-Then run it once to trigger the prompts, and grant the **app** (not your terminal) Accessibility, Screen Recording, Microphone, and Speech Recognition in System Settings → Privacy & Security:
+Now grant the **app** (not your terminal) its four permissions, once, in System Settings → Privacy & Security — Accessibility, Screen Recording, Microphone, Speech Recognition. Trigger the prompts with:
 
 ```bash
 open native/.build/pb-record.app --args --out /tmp/pb-grant-check --voice
 ```
 
-This is verified to prompt correctly for its own identity. Wiring `pb record` to drive the bundle automatically (so voice + input + screenshots share one grant) is a P1 packaging task. A signed-and-notarized Developer ID build replaces the ad-hoc signature for distribution.
+Because the app's identity is stable, **those grants survive every future rebuild** — no more re-granting. (Verified: two different binaries signed by the same identity produce a byte-identical Designated Requirement, which is what TCC keys the grant on.)
+
+Wiring `pb record` to drive the bundle automatically is the next packaging step. For distribution to other machines, swap the self-signed identity for an Apple **Developer ID** and notarize — one line in `scripts/build-app.sh` — which also clears Gatekeeper warnings.
 
 ## The P0 gate
 
