@@ -234,12 +234,46 @@ program
         checks.push(["permissions", "could not check"]);
       }
     }
+    // Voice path: the signed .app bundle + a stable signing identity.
+    const bundleBuilt = fs.existsSync(RECORD_APP);
     checks.push([
-      "model credentials",
-      process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
-        ? "present (model refinement on)"
-        : "not set (heuristic compile only — export ANTHROPIC_API_KEY)",
+      "voice app bundle",
+      bundleBuilt ? `built (${RECORD_APP.replace(os.homedir(), "~")})` : "not built — run `make bundle` for voice",
     ]);
+    const signingKc = path.join(os.homedir(), "Library", "Keychains", "playbooks-signing.keychain-db");
+    let signingOk = false;
+    if (fs.existsSync(signingKc)) {
+      const id = spawnSync("security", ["find-identity", signingKc], { encoding: "utf8" });
+      signingOk = /Playbooks Local Signing/.test(id.stdout);
+    }
+    checks.push([
+      "stable signing",
+      signingOk
+        ? "set up (permission grants persist across rebuilds)"
+        : "not set up — run `make signing-setup` so grants stop resetting",
+    ]);
+    if (bundleBuilt) {
+      const dr = spawnSync("codesign", ["-d", "-r-", RECORD_APP], { encoding: "utf8" });
+      const adhoc = /designated =>.*\bcdhash\b/.test(dr.stderr + dr.stdout) || !/certificate/.test(dr.stderr + dr.stdout);
+      checks.push([
+        "voice grants",
+        adhoc
+          ? "app is ad-hoc signed — grants reset each rebuild (run signing-setup, then rebuild)"
+          : "grant pb-record.app Accessibility/ScreenRecording/Mic/Speech once; then persistent",
+      ]);
+    }
+
+    const provider = process.env.PLAYBOOKS_PROVIDER
+      ? `PLAYBOOKS_PROVIDER=${process.env.PLAYBOOKS_PROVIDER}`
+      : process.env.PLAYBOOKS_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL
+        ? "OpenAI-compatible (PLAYBOOKS_OPENAI_BASE_URL)"
+        : process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
+          ? "Anthropic (ANTHROPIC_API_KEY)"
+          : process.env.OPENAI_API_KEY
+            ? "OpenAI (OPENAI_API_KEY)"
+            : "none — heuristic compile only";
+    checks.push(["refinement model", provider]);
+
     for (const [k, v] of checks) {
       console.log(`  ${k.padEnd(18)} ${v}`);
     }
