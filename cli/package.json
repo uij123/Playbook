@@ -7,7 +7,8 @@
     "pb": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsc && node --test dist/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
