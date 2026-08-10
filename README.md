@@ -40,6 +40,24 @@ Then:
 
 Set `ANTHROPIC_API_KEY` for model-refined compilation (`PLAYBOOKS_MODEL` overrides the default model). `--no-llm` compiles heuristically.
 
+## Voice narration on macOS
+
+Recording input and taking screenshots work with the permissions granted to your terminal. **On-device voice is different:** macOS attributes microphone/speech access to the *responsible app*, and a CLI spawned from a terminal has no identity of its own — so the OS blames (and blocks) the terminal. `pb record --voice` detects this and keeps recording without narration rather than failing.
+
+To actually capture voice, package the recorder as its own app so it becomes its own permission subject:
+
+```bash
+make bundle   # → native/.build/pb-record.app (ad-hoc signed)
+```
+
+Then run it once to trigger the prompts, and grant the **app** (not your terminal) Accessibility, Screen Recording, Microphone, and Speech Recognition in System Settings → Privacy & Security:
+
+```bash
+open native/.build/pb-record.app --args --out /tmp/pb-grant-check --voice
+```
+
+This is verified to prompt correctly for its own identity. Wiring `pb record` to drive the bundle automatically (so voice + input + screenshots share one grant) is a P1 packaging task. A signed-and-notarized Developer ID build replaces the ad-hoc signature for distribution.
+
 ## The P0 gate
 
 Before building anything else, this spike must pass: **3 recorded real flows, 10 replays each, ≥ 8/10 success per flow** on the same machine. Protocol and tally sheet: [evals/README.md](evals/README.md).
