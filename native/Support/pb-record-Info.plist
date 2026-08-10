@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>dev.playbooks.pb-record</string>
+	<key>CFBundleName</key>
+	<string>pb-record</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Playbooks records your voice narration while you demonstrate a workflow. Audio stays on this machine.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Playbooks transcribes your narration on-device to structure the recorded workflow into steps.</string>
+</dict>
+</plist>

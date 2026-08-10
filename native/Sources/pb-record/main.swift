@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ApplicationServices
+import Speech
 import PlaybookKit
 
 // pb-record — capture screen interactions + accessibility context + narration.
@@ -23,6 +24,22 @@ func opt(_ name: String) -> String? {
     let v = args[i + 1]
     args.removeSubrange(i...(i + 1))
     return v
+}
+
+// Hidden helper mode: request speech authorization in a disposable process.
+// macOS TCC hard-aborts (SIGABRT) when the *responsible app* lacks the
+// speech-recognition usage string — common under IDE/embedded terminals.
+// Probing in a child turns that crash into a graceful "no voice" downgrade.
+if flag("--voice-probe") {
+    var status = SFSpeechRecognizerAuthorizationStatus.notDetermined
+    let sem = DispatchSemaphore(value: 0)
+    SFSpeechRecognizer.requestAuthorization { s in
+        status = s
+        sem.signal()
+    }
+    _ = sem.wait(timeout: .now() + 60)
+    print(status == .authorized ? "authorized" : "denied")
+    exit(status == .authorized ? 0 : 3)
 }
 
 if flag("--check") {
@@ -74,13 +91,33 @@ do {
 }
 
 if voiceOn {
+    let probe = Process()
+    let selfPath = Bundle.main.executablePath ?? CommandLine.arguments[0]
+    probe.executableURL = URL(fileURLWithPath: selfPath)
+    probe.arguments = ["--voice-probe"]
+    var probeOK = false
     do {
-        let v = try VoiceCapture(locale: locale, sessionStart: recorder.start, outDir: outDir)
-        try v.start()
-        recorder.voice = v
-        print("🎙 voice narration on (\(locale), on-device)")
+        try probe.run()
+        probe.waitUntilExit()
+        probeOK = probe.terminationReason == .exit && probe.terminationStatus == 0
+        if !probeOK {
+            let why = probe.terminationReason == .uncaughtSignal
+                ? "this terminal/host app lacks speech-recognition entitlements"
+                : "speech recognition permission denied"
+            print("warning: voice narration unavailable (\(why)) — recording continues without it")
+        }
     } catch {
-        print("warning: voice capture unavailable (\(error)) — continuing without narration")
+        print("warning: could not probe voice availability (\(error)) — continuing without narration")
+    }
+    if probeOK {
+        do {
+            let v = try VoiceCapture(locale: locale, sessionStart: recorder.start, outDir: outDir)
+            try v.start()
+            recorder.voice = v
+            print("🎙 voice narration on (\(locale), on-device)")
+        } catch {
+            print("warning: voice capture unavailable (\(error)) — continuing without narration")
+        }
     }
 }
 
