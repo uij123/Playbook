@@ -4,6 +4,8 @@
 
 Playbooks records your whole screen — across all apps, not one browser tab — while you narrate what you're doing. It compiles the demonstration into a *playbook*: a human-readable, editable, deterministic program. Replaying a playbook makes zero model calls on a healthy run; AI is used only to author the playbook and to propose repairs when something drifts.
 
+**DSL v0.2 (new):** playbooks can now *read* the screen and act on what they find — `capture` pulls text from any accessibility element into a variable, `judge` makes an explicit, bounded, logged model decision over captured data (extraction, matching, classification — model-agnostic like everything else, with per-step model override), and `foreach` loops nested steps over extracted items. `{{variables}}` flow through targets, values, and verifications at run time. See [spec/playbook-spec-v0.md](spec/playbook-spec-v0.md) and [playbooks/demo-bricks.pb.json](playbooks/demo-bricks.pb.json).
+
 This repo is the **P0 spike**: prove the loop `record → compile → replay` end-to-end on macOS. No editor, no sharing bank yet — see [the build plan](https://claude.ai/code/artifact/8ccb8fea-d674-4d35-934a-67af16d36bc9) for the full roadmap.
 
 ## How it works

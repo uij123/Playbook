@@ -36,6 +36,26 @@ public struct PBStep: Codable {
     public var on_fail: String?
     public var timeout_ms: Int?
     public var notes: String?
+    // v0.2 — capture: read screen content into a runtime variable
+    public var capture: PBCaptureSpec?
+    // v0.2 — judge: bounded model decision over captured data
+    public var prompt: String?
+    public var input_vars: [String]?
+    public var into: String?
+    public var output: String?
+    public var choices: [String]?
+    public var model: String?
+    // v0.2 — foreach: iterate nested steps over a JSON-array variable
+    public var items: String?
+    public var `as`: String?
+    public var steps: [PBStep]?
+    public var max_iterations: Int?
+}
+
+public struct PBCaptureSpec: Codable {
+    public var into: String
+    public var attribute: String?
+    public var scope: String?
 }
 
 public struct PBTarget: Codable {
@@ -218,14 +238,19 @@ public struct StepReport: Codable {
     public var strategy: String?
     public var ms: Int
     public var error: String?
+    /// Auditing payload for nondeterministic steps: what a judge returned,
+    /// or how many items a foreach ran. Truncated.
+    public var detail: String?
 
-    public init(id: String, intent: String, status: String, strategy: String?, ms: Int, error: String?) {
+    public init(id: String, intent: String, status: String, strategy: String?, ms: Int, error: String?,
+                detail: String? = nil) {
         self.id = id
         self.intent = intent
         self.status = status
         self.strategy = strategy
         self.ms = ms
         self.error = error
+        self.detail = detail
     }
 }
 

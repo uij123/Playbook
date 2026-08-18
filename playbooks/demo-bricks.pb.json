@@ -1,0 +1,100 @@
+{
+  "playbook": "demo-bricks",
+  "version": "0.2.0",
+  "description": "Reference playbook for DSL v0.2: capture screen text, judge it into structured data, and foreach over the result. Self-contained in TextEdit.",
+  "created": "2026-08-10T00:00:00Z",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Open TextEdit",
+      "do": "app.activate",
+      "target": { "app": "TextEdit" },
+      "verify": { "frontmost_app": "TextEdit" }
+    },
+    {
+      "id": "s2",
+      "intent": "Create a new document",
+      "do": "ui.key",
+      "value": "cmd+n",
+      "target": { "app": "TextEdit" }
+    },
+    {
+      "id": "s3",
+      "intent": "Click into the document",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": { "title_contains": "Untitled" },
+        "a11y": { "role": "AXTextArea" }
+      }
+    },
+    {
+      "id": "s4",
+      "intent": "Type a fake expense inbox (stand-in for captured messages)",
+      "do": "ui.type",
+      "value": "Expenses inbox\nLunch 62 EUR with Jane on Aug 12\nTaxi 30 EUR on Aug 13\nDinner 110 EUR with John on Aug 13"
+    },
+    {
+      "id": "s5",
+      "intent": "Capture the document text",
+      "do": "capture",
+      "target": {
+        "app": "TextEdit",
+        "window": { "title_contains": "Untitled" },
+        "a11y": { "role": "AXTextArea" }
+      },
+      "capture": { "into": "raw_text", "attribute": "value", "scope": "element" }
+    },
+    {
+      "id": "s6",
+      "intent": "Extract the expenses as structured data",
+      "do": "judge",
+      "prompt": "The data contains an expense inbox, one expense per line. Extract a JSON array with one object per expense, each with exactly these string fields: date (as written, e.g. \"Aug 12\"), amount (number and currency as written), desc (one or two words, e.g. \"Lunch\"). Output only the JSON array.",
+      "input_vars": ["raw_text"],
+      "into": "expenses",
+      "output": "json"
+    },
+    {
+      "id": "s7",
+      "intent": "Classify the currency",
+      "do": "judge",
+      "prompt": "What currency are these expenses denominated in?",
+      "input_vars": ["raw_text"],
+      "into": "currency",
+      "choices": ["eur", "usd"]
+    },
+    {
+      "id": "s8",
+      "intent": "Append one log line per extracted expense",
+      "do": "foreach",
+      "items": "{{expenses}}",
+      "as": "expense",
+      "max_iterations": 20,
+      "steps": [
+        {
+          "id": "a",
+          "intent": "Log {{expense.desc}} of {{expense.date}}",
+          "do": "ui.type",
+          "value": "\nLOG {{expense_index}} {{expense.date}} | {{expense.amount}} | {{expense.desc}} | {{currency}}"
+        }
+      ]
+    },
+    {
+      "id": "s9",
+      "intent": "Verify the log lines landed",
+      "do": "wait",
+      "value": "300",
+      "target": {
+        "app": "TextEdit",
+        "window": { "title_contains": "Untitled" },
+        "a11y": { "role": "AXTextArea" }
+      },
+      "verify": {
+        "element_value_contains": "LOG 3",
+        "wait_ms": 200
+      }
+    }
+  ]
+}

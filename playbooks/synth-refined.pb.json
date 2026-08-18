@@ -1,0 +1,80 @@
+{
+  "playbook": "synth-refined",
+  "version": "0.1.0",
+  "description": "Open a new TextEdit document and record the monthly revenue figure.",
+  "created": "2026-08-09T14:00:00Z",
+  "inputs": [
+    {
+      "name": "revenue_figure",
+      "type": "string",
+      "ask": "What is this month's revenue figure?",
+      "default": "4200"
+    }
+  ],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Switch to TextEdit",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      },
+      "notes": "Opening TextEdit to write the monthly note."
+    },
+    {
+      "id": "s2",
+      "intent": "Create a new document",
+      "do": "ui.key",
+      "target": {
+        "app": "TextEdit"
+      },
+      "value": "cmd+n",
+      "notes": "New document for the monthly note."
+    },
+    {
+      "id": "s3",
+      "intent": "Click into the document's text area",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 700,
+          "y": 400
+        }
+      }
+    },
+    {
+      "id": "s4",
+      "intent": "Type the monthly revenue line",
+      "do": "ui.type",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 700,
+          "y": 400
+        }
+      },
+      "value": "Revenue this month: {{revenue_figure}}",
+      "verify": {
+        "element_value_contains": "Revenue this month: {{revenue_figure}}"
+      },
+      "notes": "The revenue figure changes every month; this month it was 4200."
+    }
+  ]
+}

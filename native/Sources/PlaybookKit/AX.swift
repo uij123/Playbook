@@ -18,6 +18,19 @@ public enum AX {
         return CGPreflightScreenCaptureAccess()
     }
 
+    /// True when the console is locked or the login window is frontmost — no UI
+    /// automation is possible in that state, and every step would just time out.
+    public static func sessionLocked() -> Bool {
+        if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            if let locked = dict["CGSSessionScreenIsLocked"] as? Int, locked == 1 { return true }
+            if let locked = dict["CGSSessionScreenIsLocked"] as? Bool, locked { return true }
+        }
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.loginwindow" {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Attribute helpers
 
     public static func rawAttr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {

@@ -63,6 +63,11 @@ final class Exec {
                 app.activate(options: [.activateIgnoringOtherApps])
             }
         }
+        // Cooperative activation (macOS 14+) can silently deny activate() from a
+        // background process when the target is already running. LaunchServices
+        // (`open -a`) is permitted to transfer focus — fall back to it once.
+        var usedOpenFallback = false
+        let activateStart = Date()
         while Date() < deadline {
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
                 if launched {
@@ -70,6 +75,14 @@ final class Exec {
                 }
                 currentApp = app.localizedName ?? name
                 return app
+            }
+            if !usedOpenFallback && Date().timeIntervalSince(activateStart) > 1.2 {
+                usedOpenFallback = true
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                p.arguments = ["-a", app.localizedName ?? name]
+                try? p.run()
+                p.waitUntilExit()
             }
             Thread.sleep(forTimeInterval: 0.15)
         }
@@ -262,5 +275,93 @@ final class Exec {
         return AX.findOnce(pid: app.processIdentifier, role: a11y.role, title: a11y.title,
                            description: a11y.description,
                            windowTitleContains: target.window?.title_contains)
+    }
+
+    // MARK: - Capture (v0.2)
+
+    /// Read text off a resolved element. "element" reads one attribute;
+    /// "subtree" walks descendants and concatenates every piece of text —
+    /// the workhorse for "read this region of the screen".
+    func captureText(_ el: AXUIElement, attribute: String, scope: String) -> String {
+        if scope == "subtree" {
+            return Exec.subtreeText(el)
+        }
+        switch attribute {
+        case "title":
+            return AX.title(el) ?? ""
+        case "description":
+            return AX.stringAttr(el, kAXDescriptionAttribute) ?? ""
+        default:
+            return AX.stringAttr(el, kAXValueAttribute) ?? ""
+        }
+    }
+
+    static func subtreeText(_ root: AXUIElement, maxNodes: Int = 3000, maxChars: Int = 20000) -> String {
+        var queue: [AXUIElement] = [root]
+        var visited = 0
+        var pieces: [String] = []
+        var total = 0
+        while !queue.isEmpty && visited < maxNodes && total < maxChars {
+            let el = queue.removeFirst()
+            visited += 1
+            for attr in [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute] {
+                if let s = AX.stringAttr(el, attr), !s.isEmpty {
+                    if pieces.last != s {
+                        pieces.append(s)
+                        total += s.count + 1
+                    }
+                }
+            }
+            queue.append(contentsOf: AX.children(el))
+        }
+        return pieces.joined(separator: "\n")
+    }
+
+    // MARK: - Judge (v0.2)
+
+    /// Run the model-backed judge helper (a subprocess, so runtime decisions use
+    /// the same model-agnostic provider layer as compilation). Returns the
+    /// decoded `value` on success.
+    func judge(cmd: String, prompt: String, data: [String: Any], output: String,
+               choices: [String]?, model: String? = nil, timeout: TimeInterval = 180) throws -> Any {
+        var payload: [String: Any] = ["prompt": prompt, "data": data, "output": output]
+        if let choices { payload["choices"] = choices }
+        if let model { payload["model"] = model }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            throw StepFailure(message: "judge payload not serializable")
+        }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", cmd]
+        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        p.standardInput = stdin
+        p.standardOutput = stdout
+        p.standardError = stderr
+
+        let done = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in done.signal() }
+        do {
+            try p.run()
+        } catch {
+            throw StepFailure(message: "could not start judge helper: \(error)")
+        }
+        stdin.fileHandleForWriting.write(body)
+        stdin.fileHandleForWriting.closeFile()
+
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            p.terminate()
+            throw StepFailure(message: "judge timed out after \(Int(timeout))s")
+        }
+        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard let response = try? JSONSerialization.jsonObject(with: outData) as? [String: Any] else {
+            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw StepFailure(message: "judge returned no result \(err.prefix(200))")
+        }
+        if response["ok"] as? Bool == true, let value = response["value"] {
+            return value
+        }
+        let err = response["error"] as? String ?? "unknown judge error"
+        throw StepFailure(message: "judge failed: \(err)")
     }
 }

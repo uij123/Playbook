@@ -7,11 +7,18 @@ export interface RefineContext {
 }
 
 /**
- * The model-agnostic seam. The backend needs exactly one capability at compile
- * time: turn a heuristic draft + narration into a refined playbook that
- * validates against the same schema. Adapters for other providers implement
- * this interface; the eval corpus measures them against each other.
+ * The model-agnostic seam, two layers:
+ *   Completer — one text completion call (system, user) → text. Adapters:
+ *     Anthropic, or any OpenAI-compatible server (OpenAI/Ollama/LM Studio/vLLM).
+ *   ModelProvider — compile-time refinement built on a Completer.
+ * The runtime `judge` step reuses the same Completers via judge.ts, so every
+ * model the compiler supports also powers in-playbook decisions.
  */
+export interface Completer {
+  name: string;
+  complete(system: string, user: string): Promise<string>;
+}
+
 export interface ModelProvider {
   name: string;
   refine(draft: Playbook, ctx: RefineContext): Promise<Playbook>;
@@ -40,7 +47,7 @@ Produce the refined playbook as a single JSON object with the exact same schema 
 
 Output ONLY the JSON object — no markdown fences, no commentary.`;
 
-function stripFences(text: string): string {
+export function stripFences(text: string): string {
   const trimmed = text.trim();
   const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   return match ? match[1] : trimmed;
@@ -75,12 +82,97 @@ export function parseRefinement(text: string): { ok: true; playbook: Playbook } 
   }
 }
 
-/** A model call: (system, user) → completion text. Each provider supplies one. */
-type CompleteFn = (system: string, user: string) => Promise<string>;
+// ---------- Completers ----------
 
-/** Shared refine loop: prompt → complete → validate, with one corrective retry. */
-async function refineViaComplete(
-  complete: CompleteFn,
+export function anthropicCompleter(model?: string): Completer {
+  const resolved = model ?? process.env.PLAYBOOKS_MODEL ?? "claude-opus-5";
+  const client = new Anthropic();
+  return {
+    name: `anthropic/${resolved}`,
+    async complete(system, user) {
+      const response = await client.messages.create({
+        model: resolved,
+        max_tokens: 16000,
+        system,
+        messages: [{ role: "user", content: user }],
+      });
+      if (response.stop_reason === "refusal") {
+        throw new Error("model declined the request");
+      }
+      return response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+    },
+  };
+}
+
+/**
+ * Any server speaking the OpenAI chat-completions shape. Point
+ * PLAYBOOKS_OPENAI_BASE_URL at a local server (e.g. Ollama on
+ * http://localhost:11434/v1) and nothing leaves the machine.
+ */
+export function openaiCompleter(model?: string): Completer {
+  const baseURL = (
+    process.env.PLAYBOOKS_OPENAI_BASE_URL ??
+    process.env.OPENAI_BASE_URL ??
+    "https://api.openai.com/v1"
+  ).replace(/\/$/, "");
+  const resolved = model ?? process.env.PLAYBOOKS_MODEL ?? "gpt-4o-mini";
+  const apiKey = process.env.OPENAI_API_KEY ?? "";
+  return {
+    name: `openai-compatible/${resolved} @ ${new URL(baseURL).host}`,
+    async complete(system, user) {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+      const res = await fetch(`${baseURL}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: resolved,
+          temperature: 0,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      }
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const text = data.choices?.[0]?.message?.content;
+      if (typeof text !== "string") throw new Error("response had no message content");
+      return text;
+    },
+  };
+}
+
+/**
+ * Pick a completer from the environment; null when no model is configured.
+ *   PLAYBOOKS_PROVIDER = anthropic | openai | none   (explicit override)
+ * Otherwise: an OpenAI base URL wins, then Anthropic credentials, then OpenAI key.
+ */
+export function selectCompleter(model?: string): Completer | null {
+  const explicit = (process.env.PLAYBOOKS_PROVIDER ?? "").toLowerCase();
+  if (explicit === "none") return null;
+  if (explicit === "openai") return openaiCompleter(model);
+  if (explicit === "anthropic") return anthropicCompleter(model);
+
+  if (process.env.PLAYBOOKS_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL) {
+    return openaiCompleter(model);
+  }
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
+    return anthropicCompleter(model);
+  }
+  if (process.env.OPENAI_API_KEY) return openaiCompleter(model);
+  return null;
+}
+
+// ---------- Refinement providers over completers ----------
+
+async function refineViaCompleter(
+  completer: Completer,
   draft: Playbook,
   ctx: RefineContext,
 ): Promise<Playbook> {
@@ -91,7 +183,7 @@ async function refineViaComplete(
       attempt === 0
         ? base
         : `${base}\n\nYour previous output was invalid: ${lastError}\nReturn the corrected JSON object only.`;
-    const text = await complete(REFINE_SYSTEM, user);
+    const text = await completer.complete(REFINE_SYSTEM, user);
     const parsed = parseRefinement(text);
     if (parsed.ok) return parsed.playbook;
     lastError = parsed.error;
@@ -101,117 +193,33 @@ async function refineViaComplete(
 
 export class AnthropicProvider implements ModelProvider {
   name: string;
-  private client: Anthropic;
-  private model: string;
-
+  private completer: Completer;
   constructor(model?: string) {
-    this.model = model ?? process.env.PLAYBOOKS_MODEL ?? "claude-opus-5";
-    this.name = `anthropic/${this.model}`;
-    this.client = new Anthropic();
+    this.completer = anthropicCompleter(model);
+    this.name = this.completer.name;
   }
-
   refine(draft: Playbook, ctx: RefineContext): Promise<Playbook> {
-    return refineViaComplete(
-      async (system, user) => {
-        const response = await this.client.messages.create({
-          model: this.model,
-          max_tokens: 16000,
-          system,
-          messages: [{ role: "user", content: user }],
-        });
-        if (response.stop_reason === "refusal") {
-          throw new Error("model declined the refinement request");
-        }
-        return response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
-          .map((b) => b.text)
-          .join("");
-      },
-      draft,
-      ctx,
-    );
+    return refineViaCompleter(this.completer, draft, ctx);
   }
 }
 
-/**
- * Any server speaking the OpenAI chat-completions shape: OpenAI itself, Ollama,
- * LM Studio, vLLM, llama.cpp, LiteLLM, etc. This is the "use any model" path —
- * point PLAYBOOKS_OPENAI_BASE_URL at a local server and no data leaves the box.
- *
- *   PLAYBOOKS_OPENAI_BASE_URL   e.g. http://localhost:11434/v1 (Ollama)
- *   PLAYBOOKS_MODEL             e.g. llama3.1, qwen2.5-coder, gpt-4o-mini
- *   OPENAI_API_KEY              optional; local servers usually ignore it
- */
 export class OpenAICompatibleProvider implements ModelProvider {
   name: string;
-  private baseURL: string;
-  private model: string;
-  private apiKey: string;
-
+  private completer: Completer;
   constructor(model?: string) {
-    this.baseURL = (
-      process.env.PLAYBOOKS_OPENAI_BASE_URL ??
-      process.env.OPENAI_BASE_URL ??
-      "https://api.openai.com/v1"
-    ).replace(/\/$/, "");
-    this.model = model ?? process.env.PLAYBOOKS_MODEL ?? "gpt-4o-mini";
-    this.apiKey = process.env.OPENAI_API_KEY ?? "";
-    this.name = `openai-compatible/${this.model} @ ${new URL(this.baseURL).host}`;
+    this.completer = openaiCompleter(model);
+    this.name = this.completer.name;
   }
-
   refine(draft: Playbook, ctx: RefineContext): Promise<Playbook> {
-    return refineViaComplete(
-      async (system, user) => {
-        const headers: Record<string, string> = { "content-type": "application/json" };
-        if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-        const res = await fetch(`${this.baseURL}/chat/completions`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            model: this.model,
-            temperature: 0,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-          }),
-        });
-        if (!res.ok) {
-          throw new Error(`${this.name}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
-        }
-        const data = (await res.json()) as {
-          choices?: { message?: { content?: string } }[];
-        };
-        const text = data.choices?.[0]?.message?.content;
-        if (typeof text !== "string") {
-          throw new Error(`${this.name}: response had no message content`);
-        }
-        return text;
-      },
-      draft,
-      ctx,
-    );
+    return refineViaCompleter(this.completer, draft, ctx);
   }
 }
 
-/**
- * Pick a provider from the environment.
- *   PLAYBOOKS_PROVIDER = anthropic | openai | none   (explicit override)
- * Otherwise: an OpenAI base URL wins, then Anthropic credentials, then none.
- */
 export function selectProvider(model?: string, disable = false): ModelProvider {
   if (disable) return new NullProvider();
-  const explicit = (process.env.PLAYBOOKS_PROVIDER ?? "").toLowerCase();
-  if (explicit === "none") return new NullProvider();
-  if (explicit === "openai") return new OpenAICompatibleProvider(model);
-  if (explicit === "anthropic") return new AnthropicProvider(model);
-
-  if (process.env.PLAYBOOKS_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL) {
-    return new OpenAICompatibleProvider(model);
-  }
-  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
-    return new AnthropicProvider(model);
-  }
-  if (process.env.OPENAI_API_KEY) return new OpenAICompatibleProvider(model);
-  return new NullProvider();
+  const completer = selectCompleter(model);
+  if (!completer) return new NullProvider();
+  return completer.name.startsWith("anthropic/")
+    ? new AnthropicProvider(model)
+    : new OpenAICompatibleProvider(model);
 }

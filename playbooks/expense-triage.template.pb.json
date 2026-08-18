@@ -1,0 +1,145 @@
+{
+  "_readme": "TEMPLATE for Louis's expense-triage flow — WhatsApp self-chat → Outlook calendar (browser) → Notes. Every target marked REPLACE is a placeholder: record the navigation once with `pb record`, compile it, and copy the real captured targets (role/title/window/fallback_point) over these. The capture/judge/foreach steps are the authored v0.2 layer and should carry over as-is. Run with `pb run playbooks/expense-triage.pb.json` after filling in.",
+  "playbook": "expense-triage",
+  "version": "0.2.0",
+  "description": "Read expenses sent to my WhatsApp self-chat, match them to Outlook meetings, and log each one to Notes with date, amount, person, and sourcing/DD classification.",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Open WhatsApp",
+      "do": "app.activate",
+      "target": { "app": "WhatsApp" },
+      "verify": { "frontmost_app": "WhatsApp" }
+    },
+    {
+      "id": "s2",
+      "intent": "Open my self-chat (message inbox)",
+      "do": "ui.click",
+      "target": {
+        "app": "WhatsApp",
+        "a11y": { "role": "REPLACE_ROLE_FROM_RECORDING", "title": "REPLACE_SELF_CHAT_TITLE" },
+        "fallback_point": { "x": 0, "y": 0 }
+      },
+      "notes": "Record yourself clicking the self-chat once; copy the captured target here."
+    },
+    {
+      "id": "s3",
+      "intent": "Read the visible expense messages",
+      "do": "capture",
+      "target": {
+        "app": "WhatsApp",
+        "a11y": { "role": "REPLACE_MESSAGE_LIST_ROLE" }
+      },
+      "capture": { "into": "raw_messages", "scope": "subtree" }
+    },
+    {
+      "id": "s4",
+      "intent": "Open the Outlook calendar in the browser",
+      "do": "app.activate",
+      "target": { "app": "Google Chrome" },
+      "verify": { "frontmost_app": "Chrome" }
+    },
+    {
+      "id": "s5",
+      "intent": "Go to the calendar tab/week",
+      "do": "ui.click",
+      "target": {
+        "app": "Google Chrome",
+        "window": { "title_contains": "Calendar" },
+        "a11y": { "role": "REPLACE_FROM_RECORDING" },
+        "fallback_point": { "x": 0, "y": 0 }
+      },
+      "notes": "Whatever click(s) you use to reach the right week — record once, paste targets. Duplicate this step if it takes several clicks."
+    },
+    {
+      "id": "s6",
+      "intent": "Read the visible calendar",
+      "do": "capture",
+      "target": {
+        "app": "Google Chrome",
+        "window": { "title_contains": "Calendar" },
+        "a11y": { "role": "AXWebArea" }
+      },
+      "capture": { "into": "calendar_text", "scope": "subtree" }
+    },
+    {
+      "id": "s7",
+      "intent": "Extract the expenses as structured data",
+      "do": "judge",
+      "prompt": "The data field raw_messages contains WhatsApp messages I sent myself, each describing one expense (amount, what it was, who with, and/or a date). Extract a JSON array with one object per expense, each with string fields: date (as written, or empty if absent), amount (number + currency as written), desc (2-4 words), person_hint (name if mentioned, else empty). Ignore anything that is not an expense.",
+      "input_vars": ["raw_messages"],
+      "into": "expenses",
+      "output": "json"
+    },
+    {
+      "id": "s8",
+      "intent": "Open Notes on my expenses note",
+      "do": "app.activate",
+      "target": { "app": "Notes" },
+      "verify": { "frontmost_app": "Notes" }
+    },
+    {
+      "id": "s9",
+      "intent": "Select the expenses note",
+      "do": "ui.click",
+      "target": {
+        "app": "Notes",
+        "a11y": { "role": "REPLACE_FROM_RECORDING", "title": "REPLACE_NOTE_TITLE" },
+        "fallback_point": { "x": 0, "y": 0 }
+      }
+    },
+    {
+      "id": "s10",
+      "intent": "Click into the note body",
+      "do": "ui.click",
+      "target": {
+        "app": "Notes",
+        "a11y": { "role": "AXTextArea" }
+      }
+    },
+    {
+      "id": "s11",
+      "intent": "Log every expense with its meeting match and classification",
+      "do": "foreach",
+      "items": "{{expenses}}",
+      "as": "expense",
+      "max_iterations": 30,
+      "steps": [
+        {
+          "id": "a",
+          "intent": "Match {{expense.desc}} to a meeting and classify it",
+          "do": "judge",
+          "prompt": "One expense (field expense) and my calendar for the period (field calendar_text). Decide whether this expense belongs to a sourcing meeting (meeting a company/founder we might invest in for the first time) or a DD meeting (diligence on an active deal: experts, management sessions, references). Use the meeting title/attendees nearest the expense's date. Answer sourcing or dd.",
+          "input_vars": ["expense", "calendar_text"],
+          "into": "kind",
+          "choices": ["sourcing", "dd"]
+        },
+        {
+          "id": "b",
+          "intent": "Find who the meeting was with",
+          "do": "judge",
+          "prompt": "Same expense (field expense) and calendar (field calendar_text): give the person/company the expense most plausibly relates to, as a short string like \"Jane Doe (Acme)\". If the expense names a person, prefer that. If nothing matches, answer exactly: unknown.",
+          "input_vars": ["expense", "calendar_text"],
+          "into": "person",
+          "output": "text"
+        },
+        {
+          "id": "c",
+          "intent": "Append the log line for {{expense.desc}}",
+          "do": "ui.type",
+          "value": "\n{{expense.date}} — {{expense.amount}} — {{expense.desc}} — {{person}} — {{kind}}"
+        }
+      ]
+    },
+    {
+      "id": "s12",
+      "intent": "Verify the log landed",
+      "do": "wait",
+      "value": "300",
+      "target": { "app": "Notes", "a11y": { "role": "AXTextArea" } },
+      "verify": { "element_value_contains": "{{expenses.0.amount}}", "wait_ms": 300 }
+    }
+  ]
+}

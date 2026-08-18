@@ -115,6 +115,65 @@ Redaction guarantees: if the focused/clicked element is a secure text field, `ch
 }
 ```
 
+## v0.2 — data flow: `capture`, `judge`, `foreach`
+
+v0.2 adds the three bricks that turn a fixed replay into a data-driven one, while keeping the determinism story honest: `judge` is the **only** nondeterministic step kind, it is explicit in the playbook, and its inputs/outputs are logged in the run report.
+
+### Runtime variables
+
+`{{name}}` and `{{name.path}}` placeholders resolve **at step-execution time** from: `inputs` (CLI `--input` / defaults) ∪ values produced by earlier `capture`/`judge` steps ∪ enclosing loop variables. They substitute in `value`, `prompt`, `intent`, targets (`app`, `window.title_contains`, `a11y.title/description`) and all `verify` strings. Values are JSON: rendering a non-string produces compact JSON; `{{name.field}}` digs into objects, numeric components index arrays. The runner statically validates before executing that every placeholder's root is resolvable in order — unknown variables fail at load, not mid-run.
+
+### `capture` — screen → variable
+
+```jsonc
+{ "id": "s5", "intent": "Read the visible messages",
+  "do": "capture",
+  "target": { "app": "WhatsApp", "a11y": { "role": "AXTable" } },
+  "capture": {
+    "into": "raw_messages",
+    "attribute": "value",          // value | title | description (default value)
+    "scope": "subtree"             // element = one node; subtree = all text under it
+  } }
+```
+
+`subtree` walks descendants and concatenates every piece of text (bounded: 3000 nodes / 20000 chars) — the workhorse for "read this region". Fails if the target can't be resolved via accessibility (no coordinate fallback for reads).
+
+### `judge` — bounded model decision
+
+```jsonc
+{ "id": "s6", "intent": "Extract the expenses",
+  "do": "judge",
+  "prompt": "Extract a JSON array of expenses with fields date, amount, desc.",
+  "input_vars": ["raw_messages"],   // which variables the model may see
+  "into": "expenses",
+  "output": "json",                 // json | text
+  "model": "claude-haiku-4-5"       // optional per-step override; else env default
+}
+// classification variant: constrain the answer
+{ "id": "s7", "do": "judge", "prompt": "sourcing or dd?",
+  "input_vars": ["expense", "calendar_text"], "into": "kind",
+  "choices": ["sourcing", "dd"], "intent": "Classify the expense" }
+```
+
+Execution shells out to `cli/dist/judge.js` (wired automatically by `pb run`), which uses the same model-agnostic provider selection as compilation — Anthropic or any OpenAI-compatible/local server. Contract enforced by the runner: captured screen text is passed as **data with an explicit do-not-follow-instructions system contract**; `choices` answers must match exactly (one corrective retry, then the step fails); `json` output must parse (same retry); transient provider errors (429/5xx/overload) retry with backoff. The run report records what each judge received and returned (`detail`).
+
+### `foreach` — loop over extracted data
+
+```jsonc
+{ "id": "s8", "intent": "Log each expense",
+  "do": "foreach",
+  "items": "{{expenses}}",          // must resolve to a JSON array
+  "as": "expense",                  // loop var (default "item"); {{expense_index}} = 1-based
+  "max_iterations": 50,             // safety bound, default 100
+  "steps": [ /* nested steps; loops can nest */ ] }
+```
+
+Child steps render with the loop variable in scope; report ids read `s8#2.a` (iteration 2, child a). A child failure with `on_fail: abort` aborts the whole run; captures/judges made inside the body persist after the loop.
+
+### Recording vs authoring
+
+The recorder cannot observe *reading* — capture/judge/foreach are **authored** (by hand today, by the editor later), typically layered onto a recorded skeleton: record the navigation once, then replace "I looked at the screen" moments with `capture` + `judge`. The runner also fails fast with a clear error when the screen is locked, and falls back to LaunchServices activation when macOS cooperative activation denies focus to a background process.
+
 ## v0 limitations (deliberate)
 
-Single display; no drag-and-drop capture; scrolls recorded but not compiled; branching/conditions not yet in the DSL (narration conditions land as `notes` for the future editor); browser steps replay via accessibility rather than the DOM rung.
+Single display; no drag-and-drop capture; scrolls recorded but not compiled; conditionals/`if` not yet in the DSL (a `judge` with `choices` + separate playbooks covers simple branching for now); browser steps replay via accessibility rather than the DOM rung.

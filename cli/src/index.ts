@@ -207,6 +207,12 @@ program
     for (const kv of opts.input) args.push("--input", kv);
     if (opts.strict) args.push("--strict");
     args.push("--step-delay", opts.stepDelay);
+    // judge steps shell out to the TS judge runner so runtime decisions use the
+    // same model-agnostic provider selection as compilation.
+    const judgeJs = path.join(ROOT, "cli", "dist", "judge.js");
+    if (fs.existsSync(judgeJs)) {
+      args.push("--judge-cmd", `'${process.execPath}' '${judgeJs}'`);
+    }
     runBinary(REPLAY_BIN, args);
   });
 
