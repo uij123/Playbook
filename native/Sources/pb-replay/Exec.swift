@@ -272,9 +272,23 @@ final class Exec {
     private func resolveQuiet(_ target: PBTarget) -> AXUIElement? {
         let appName = target.app ?? currentApp
         guard let appName, let app = findRunningApp(appName), let a11y = target.a11y else { return nil }
-        return AX.findOnce(pid: app.processIdentifier, role: a11y.role, title: a11y.title,
-                           description: a11y.description,
-                           windowTitleContains: target.window?.title_contains)
+        if let el = AX.findOnce(pid: app.processIdentifier, role: a11y.role, title: a11y.title,
+                                description: a11y.description,
+                                windowTitleContains: target.window?.title_contains) {
+            return el
+        }
+        // A background app whose windows sit on another Mission Control Space
+        // enumerates ZERO windows via AX (success, empty array) — e.g. the user
+        // swiped to another Space mid-run. The replay owns the session while it
+        // runs: re-front the app once and retry.
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+            _ = try? ensureFrontmost(appName, launchIfNeeded: false,
+                                     deadline: Date().addingTimeInterval(3))
+            return AX.findOnce(pid: app.processIdentifier, role: a11y.role, title: a11y.title,
+                               description: a11y.description,
+                               windowTitleContains: target.window?.title_contains)
+        }
+        return nil
     }
 
     // MARK: - Capture (v0.2)
