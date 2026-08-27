@@ -1,0 +1,284 @@
+{
+  "playbook": "expense-triage",
+  "version": "0.2.0",
+  "description": "Read expenses from my WhatsApp self-chat, match them against the visible Outlook calendar in Chrome, and log one line per expense (date, amount, description, person, sourcing/DD) into a fresh TextEdit document. Selectors captured from the expense-nav recording of 2026-08-27.",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Open WhatsApp",
+      "do": "app.activate",
+      "target": {
+        "app": "WhatsApp"
+      },
+      "verify": {
+        "frontmost_app": "WhatsApp"
+      }
+    },
+    {
+      "id": "s1b",
+      "intent": "Close any open overlay in WhatsApp",
+      "do": "ui.key",
+      "value": "esc",
+      "target": {
+        "app": "WhatsApp"
+      }
+    },
+    {
+      "id": "s1c",
+      "intent": "Close a second overlay layer if present",
+      "do": "ui.key",
+      "value": "esc",
+      "target": {
+        "app": "WhatsApp"
+      }
+    },
+    {
+      "id": "s2",
+      "intent": "Open my self-chat (Moi)",
+      "do": "ui.click",
+      "target": {
+        "app": "WhatsApp",
+        "window": {
+          "title_contains": "WhatsApp"
+        },
+        "a11y": {
+          "role": "AXButton",
+          "description": "Moi"
+        },
+        "fallback_point": {
+          "x": 184,
+          "y": 670
+        }
+      },
+      "timeout_ms": 10000
+    },
+    {
+      "id": "s3",
+      "intent": "Read everything visible in WhatsApp",
+      "do": "capture",
+      "target": {
+        "app": "WhatsApp",
+        "window": {
+          "title_contains": "WhatsApp"
+        },
+        "a11y": {
+          "role": "AXWindow"
+        }
+      },
+      "capture": {
+        "into": "whatsapp_text",
+        "scope": "subtree"
+      },
+      "timeout_ms": 15000
+    },
+    {
+      "id": "s4",
+      "intent": "Switch to Chrome",
+      "do": "app.activate",
+      "target": {
+        "app": "Google Chrome"
+      },
+      "verify": {
+        "frontmost_app": "Chrome"
+      }
+    },
+    {
+      "id": "s5a",
+      "intent": "Open Chrome tab search",
+      "do": "ui.key",
+      "value": "cmd+shift+a",
+      "target": {
+        "app": "Google Chrome"
+      }
+    },
+    {
+      "id": "s5b",
+      "intent": "Search my open tabs for Outlook",
+      "do": "ui.type",
+      "value": "outlook"
+    },
+    {
+      "id": "s5c",
+      "intent": "Jump to the signed-in Outlook tab",
+      "do": "ui.key",
+      "value": "return",
+      "target": {
+        "app": "Google Chrome"
+      },
+      "verify": {
+        "window_title_contains": "Outlook",
+        "wait_ms": 1200
+      },
+      "timeout_ms": 15000
+    },
+    {
+      "id": "s5e",
+      "intent": "Open the Calendar view",
+      "do": "ui.click",
+      "target": {
+        "app": "Google Chrome",
+        "window": {
+          "title_contains": "Outlook"
+        },
+        "a11y": {
+          "role": "AXImage",
+          "description": "Calendar"
+        },
+        "fallback_point": {
+          "x": 26,
+          "y": 239
+        }
+      },
+      "verify": {
+        "window_title_contains": "Calendar",
+        "wait_ms": 1000
+      },
+      "timeout_ms": 20000
+    },
+    {
+      "id": "s5d",
+      "intent": "Let the calendar render",
+      "do": "wait",
+      "value": "3000"
+    },
+    {
+      "id": "s6",
+      "intent": "Read the visible calendar",
+      "do": "capture",
+      "target": {
+        "app": "Google Chrome",
+        "window": {
+          "title_contains": "Calendar"
+        },
+        "a11y": {
+          "role": "AXWebArea"
+        }
+      },
+      "capture": {
+        "into": "calendar_text",
+        "scope": "subtree"
+      },
+      "timeout_ms": 15000
+    },
+    {
+      "id": "s7",
+      "intent": "Extract the expenses from my self-chat",
+      "do": "judge",
+      "prompt": "The data field whatsapp_text is the accessibility text of my WhatsApp window. The conversation shown is my self-chat ('Moi' / 'Sent to Moi') where I forward expenses. Messages are either text expenses, or photo/album receipts whose captions only reveal a date (e.g. 'Your photo, 15Julyat12:59' or 'Your album with 21 photos'). Extract a JSON array, one object per distinct expense-like message, newest last, each with string fields: date (as best recoverable from the caption or text, e.g. '15 July', else ''), amount (number + currency if present in text, else ''), desc (2-4 words; use 'photo receipt' or 'photo album receipt' for image-only messages), person_hint (a name if the text mentions one, else ''). Ignore chat-list entries for other conversations, UI labels, and anything that is clearly not an expense record. Maximum 12 items. Output only the JSON array.",
+      "input_vars": [
+        "whatsapp_text"
+      ],
+      "into": "expenses",
+      "output": "json",
+      "timeout_ms": 200000
+    },
+    {
+      "id": "s8",
+      "intent": "Open TextEdit for the log",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      }
+    },
+    {
+      "id": "s9",
+      "intent": "Create a fresh log document",
+      "do": "ui.key",
+      "value": "cmd+n",
+      "target": {
+        "app": "TextEdit"
+      }
+    },
+    {
+      "id": "s10",
+      "intent": "Click into the document",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        }
+      }
+    },
+    {
+      "id": "s11",
+      "intent": "Write the header",
+      "do": "ui.type",
+      "value": "EXPENSE TRIAGE — date | amount | description | person | sourcing/dd"
+    },
+    {
+      "id": "s12",
+      "intent": "Match and log every expense",
+      "do": "foreach",
+      "items": "{{expenses}}",
+      "as": "expense",
+      "max_iterations": 12,
+      "steps": [
+        {
+          "id": "a",
+          "intent": "Classify {{expense.desc}} ({{expense.date}}) as sourcing or dd",
+          "do": "judge",
+          "prompt": "One of my expenses (field expense) and the accessibility text of my Outlook calendar (field calendar_text). I work in growth equity: 'sourcing' = meeting a company/founder we might invest in for the first time; 'dd' = diligence on an active deal (experts, management sessions, references, advisors). Using the meeting titles/attendees nearest the expense's date (if the date is absent or nothing matches, default to sourcing), answer sourcing or dd.",
+          "input_vars": [
+            "expense",
+            "calendar_text"
+          ],
+          "into": "kind",
+          "choices": [
+            "sourcing",
+            "dd"
+          ],
+          "model": "claude-sonnet-5",
+          "timeout_ms": 200000
+        },
+        {
+          "id": "b",
+          "intent": "Identify who {{expense.desc}} relates to",
+          "do": "judge",
+          "prompt": "Same expense (field expense) and calendar (field calendar_text). Answer with the person/company this expense most plausibly relates to, as a short string like 'Jane Doe (Acme)' — prefer a name in the expense itself, else the calendar meeting nearest its date. If nothing matches, answer exactly: unknown.",
+          "input_vars": [
+            "expense",
+            "calendar_text"
+          ],
+          "into": "person",
+          "output": "text",
+          "model": "claude-sonnet-5",
+          "timeout_ms": 200000
+        },
+        {
+          "id": "c",
+          "intent": "Log {{expense.desc}}",
+          "do": "ui.type",
+          "value": "\n{{expense.date}} | {{expense.amount}} | {{expense.desc}} | {{person}} | {{kind}}"
+        }
+      ]
+    },
+    {
+      "id": "s13",
+      "intent": "Verify the log landed",
+      "do": "wait",
+      "value": "300",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        }
+      },
+      "verify": {
+        "element_value_contains": "{{expenses.0.desc}}",
+        "wait_ms": 300
+      }
+    }
+  ]
+}

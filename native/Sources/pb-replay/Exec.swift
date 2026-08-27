@@ -17,15 +17,35 @@ final class Exec {
 
     // MARK: - Apps
 
+    /// App names in the wild carry invisible Unicode format characters —
+    /// WhatsApp's localizedName is "\u{200E}WhatsApp" — strip them before comparing.
+    static func normalizedAppName(_ s: String) -> String {
+        return String(String.UnicodeScalarView(
+            s.unicodeScalars.filter { $0.properties.generalCategory != .format }
+        )).lowercased().trimmingCharacters(in: .whitespaces)
+    }
+
     func findRunningApp(_ name: String) -> NSRunningApplication? {
-        let lower = name.lowercased()
+        let want = Exec.normalizedAppName(name)
         let apps = NSWorkspace.shared.runningApplications
-        if let exact = apps.first(where: {
-            $0.localizedName?.lowercased() == lower || $0.bundleIdentifier?.lowercased() == lower
-        }) {
-            return exact
+        // Only apps with a real UI: helper/background processes (agents, service
+        // extensions) also appear in runningApplications and can shadow the app
+        // by name — they have no windows and would break every resolution.
+        let regular = apps.filter { $0.activationPolicy == .regular }
+        for pool in [regular, apps] {
+            if let exact = pool.first(where: {
+                Exec.normalizedAppName($0.localizedName ?? "") == want ||
+                $0.bundleIdentifier?.lowercased() == want
+            }) {
+                return exact
+            }
+            if let partial = pool.first(where: {
+                Exec.normalizedAppName($0.localizedName ?? "").contains(want)
+            }) {
+                return partial
+            }
         }
-        return apps.first { $0.localizedName?.lowercased().contains(lower) == true }
+        return nil
     }
 
     func frontmostIs(_ name: String) -> Bool {
@@ -80,7 +100,12 @@ final class Exec {
                 usedOpenFallback = true
                 let p = Process()
                 p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                p.arguments = ["-a", app.localizedName ?? name]
+                // Bundle URL survives display names with invisible characters.
+                if let url = app.bundleURL {
+                    p.arguments = [url.path]
+                } else {
+                    p.arguments = ["-a", app.localizedName ?? name]
+                }
                 try? p.run()
                 p.waitUntilExit()
             }
@@ -252,13 +277,13 @@ final class Exec {
             }
         }
         if let target = v.element_exists {
-            guard resolveQuiet(target) != nil else {
+            guard resolveForVerify(target) != nil else {
                 return "verify failed: element does not exist"
             }
         }
         if let want = v.element_value_contains {
             let target = v.element_exists ?? step.target
-            guard let target, let el = resolveQuiet(target) else {
+            guard let target, let el = resolveForVerify(target) else {
                 return "verify failed: element for value check not found"
             }
             let value = AX.stringAttr(el, kAXValueAttribute) ?? ""
@@ -267,6 +292,19 @@ final class Exec {
             }
         }
         return nil
+    }
+
+    /// Verification owns the machine exactly like actions do: front the target
+    /// app first (pulling its Space in if the user swiped away mid-run), then
+    /// resolve with a short retry window.
+    private func resolveForVerify(_ target: PBTarget) -> AXUIElement? {
+        guard target.a11y != nil else { return nil }
+        do {
+            let resolved = try resolveTarget(target, deadline: Date().addingTimeInterval(2.5))
+            return resolved.element
+        } catch {
+            return nil
+        }
     }
 
     private func resolveQuiet(_ target: PBTarget) -> AXUIElement? {
