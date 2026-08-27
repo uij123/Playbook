@@ -53,6 +53,29 @@ The compiler's refinement stage is model-agnostic — a 3-method provider interf
 
 `PLAYBOOKS_PROVIDER=anthropic|openai|none` forces the choice; otherwise it's auto-detected from the environment. `--no-llm` skips refinement entirely (pure heuristic compile — no network, no key).
 
+## Studio — the visual editor and library
+
+```bash
+./pb studio    # → http://127.0.0.1:5177
+```
+
+A local web UI (localhost-only): the **library** lists every playbook with its determinism score, judge count, secret usage, and last-run status; the **editor** renders the playbook as a tree of bricks — deterministic steps, blue `capture` bricks, amber `judge` decision bricks (with their choices as branches), purple `foreach` containers with nested children — every field editable, with add/move/delete, schema-validated saves, one-click runs with a live console, and run history. Playbook files stay the source of truth; the Studio is a view over them.
+
+## Secrets (shareable playbooks, private credentials)
+
+Playbooks never contain credentials — they reference them as `{{secret.name}}`, and each user stores their own values in the **macOS Keychain**:
+
+```bash
+./pb secret set corp_email_pw     # hidden prompt; or pipe the value in
+./pb secret list                  # names only, never values
+```
+
+At run time the CLI resolves referenced secrets (no GUI prompt) and the runner substitutes them where needed — while **masking them as `•••` in the console and run reports**, and refusing to pass them to judge steps. Share the playbook; teammates run `pb secret set` once with their own credentials.
+
+## Vision — reading what's on screen, literally
+
+`capture` with `"scope": "screenshot"` photographs the target element and stores an image the next `judge` can *see* (any vision-capable model). Proven pattern (see `expense-triage`): foreach over receipt messages → open each one → screenshot the viewer → vision judge extracts `{amount, merchant, date}` → close → log. `on_fail: "next_item"` skips a failed receipt instead of killing the run.
+
 ## Voice narration on macOS (and grant-once permissions)
 
 Recording input and screenshots work with the permissions your terminal already has. **On-device voice is different:** macOS attributes microphone/speech access to the *responsible app*, and a CLI spawned from a terminal has no identity of its own — so the OS blocks it. `pb record --voice` detects this and keeps recording without narration rather than failing. To capture voice, the recorder must run as its own app.

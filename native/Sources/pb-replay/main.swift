@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ApplicationServices
+import Security
 import PlaybookKit
 
 // pb-replay — deterministic playbook execution, with DSL v0.2 data flow:
@@ -69,9 +70,74 @@ for pair in inputArgs {
     vars[String(pair[..<eq])] = String(pair[pair.index(after: eq)...])
 }
 
+// MARK: - Secrets ({{secret.NAME}})
+// Values arrive from the pb CLI via PB_SECRETS_JSON (resolved by /usr/bin/security,
+// no GUI prompt), with a direct Keychain read as fallback. They are namespaced
+// under vars["secret"], never written to reports, and masked in every console line.
+
+func keychainSecret(_ name: String) -> String? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "playbooks",
+        kSecAttrAccount as String: name,
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+          let data = item as? Data else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
+func collectPlaceholders(_ steps: [PBStep]) -> [String] {
+    var out: [String] = []
+    for s in steps {
+        out.append(contentsOf: Vars.stepPlaceholders(s))
+        if let children = s.steps { out.append(contentsOf: collectPlaceholders(children)) }
+    }
+    return out
+}
+
+var secretValues: [String: String] = [:]
+if let payload = ProcessInfo.processInfo.environment["PB_SECRETS_JSON"],
+   let data = payload.data(using: .utf8),
+   let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+    secretValues = parsed
+}
+let secretRefs = Set(collectPlaceholders(pb.steps)
+    .filter { Vars.root(of: $0) == "secret" }
+    .compactMap { $0.split(separator: ".").dropFirst().first.map(String.init) })
+var missingSecrets: [String] = []
+for name in secretRefs.sorted() where secretValues[name] == nil {
+    if let v = keychainSecret(name) {
+        secretValues[name] = v
+    } else {
+        missingSecrets.append(name)
+    }
+}
+if !missingSecrets.isEmpty {
+    print("error: missing secrets: \(missingSecrets.joined(separator: ", "))")
+    print("store them once with: pb secret set <name>")
+    exit(64)
+}
+if !secretRefs.isEmpty {
+    vars["secret"] = secretValues as [String: Any]
+}
+let maskedSecretVars: [String: Any] = ["secret": secretValues.mapValues { _ in "•••" } as [String: Any]]
+
+/// Strip secret values from anything that reaches the console or the report.
+func maskSecrets(_ text: String) -> String {
+    var out = text
+    for value in secretValues.values where value.count >= 3 {
+        out = out.replacingOccurrences(of: value, with: "•••")
+    }
+    return out
+}
+
 var declaredInputs = Set((pb.inputs ?? []).map { $0.name })
 declaredInputs.formUnion(vars.keys)
 var available = declaredInputs
+available.insert("secret")
 let missingRoots = Vars.staticCheck(steps: pb.steps, available: &available)
 let unsatisfied = missingRoots.filter { vars[$0] == nil }
 if !unsatisfied.isEmpty {
@@ -133,6 +199,9 @@ if AX.sessionLocked() {
 let exec = Exec(strict: strict)
 var reports: [StepReport] = []
 var aborted = false
+// Set by a failing child with on_fail "next_item": skip the rest of the current
+// foreach iteration and continue with the next item.
+var skipIteration = false
 let startedISO = PBJSON.isoNow()
 
 func truncate(_ s: String, _ n: Int = 300) -> String {
@@ -223,11 +292,18 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
             guard let el = resolved.element else {
                 throw StepFailure(message: "capture target not resolved via accessibility")
             }
-            let text = exec.captureText(el, attribute: spec.attribute ?? "value",
-                                        scope: spec.scope ?? "element")
-            vars[spec.into] = text
-            strategy = "capture(\(spec.scope ?? "element"))"
-            detail = "\(spec.into) ← \(truncate(text, 160)) (\(text.count) chars)"
+            let scope = spec.scope ?? "element"
+            if scope == "screenshot" {
+                let imagePath = try exec.screenshotElement(el, playbook: pb.playbook, stepId: stepId)
+                vars[spec.into] = ["__image": imagePath] as [String: Any]
+                strategy = "capture(screenshot)"
+                detail = "\(spec.into) ← \(imagePath)"
+            } else {
+                let text = exec.captureText(el, attribute: spec.attribute ?? "value", scope: scope)
+                vars[spec.into] = text
+                strategy = "capture(\(scope))"
+                detail = "\(spec.into) ← \(truncate(text, 160)) (\(text.count) chars)"
+            }
 
         case "judge":
             guard let prompt = step.prompt, let into = step.into else {
@@ -238,6 +314,9 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
             }
             var data: [String: Any] = [:]
             for name in step.input_vars ?? [] {
+                if name == "secret" || name.hasPrefix("secret.") {
+                    throw StepFailure(message: "secrets can never be sent to judge steps")
+                }
                 guard let v = vars[name] else {
                     throw StepFailure(message: "judge input_var '\(name)' has no value")
                 }
@@ -267,15 +346,21 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
             detail = "\(array.count) item(s)\(cap < array.count ? ", capped at \(cap)" : "")"
             // Report the loop header first, then run the body.
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
-            reports.append(StepReport(id: stepId, intent: step.intent, status: "ok",
-                                      strategy: strategy, ms: ms, error: nil, detail: detail))
-            print("  ▹ \(stepId) \(step.intent) — \(detail ?? "")")
+            reports.append(StepReport(id: stepId, intent: maskSecrets(step.intent), status: "ok",
+                                      strategy: strategy, ms: ms, error: nil,
+                                      detail: detail.map(maskSecrets)))
+            print("  ▹ \(stepId) \(maskSecrets(step.intent)) — \(detail.map(maskSecrets) ?? "")")
             for (i, item) in array.prefix(cap).enumerated() {
                 vars[loopVar] = item
                 vars["\(loopVar)_index"] = NSNumber(value: i + 1)
                 for child in step.steps ?? [] {
                     execute(child, idPrefix: "\(stepId)#\(i + 1).")
                     if aborted { break }
+                    if skipIteration {
+                        skipIteration = false
+                        print("  ↷ \(stepId)#\(i + 1) skipping to next item")
+                        break
+                    }
                 }
                 if aborted { break }
             }
@@ -298,18 +383,25 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
     }
 
     let ms = Int(Date().timeIntervalSince(t0) * 1000)
+    let shownIntent = maskSecrets(step.intent)
+    let shownDetail = detail.map(maskSecrets)
     if let error {
-        reports.append(StepReport(id: stepId, intent: step.intent, status: "fail",
-                                  strategy: strategy, ms: ms, error: error, detail: detail))
-        print("  ✗ \(stepId) \(step.intent) — \(error) (\(ms)ms)")
-        if (step.on_fail ?? "abort") == "abort" {
-            aborted = true
+        let shownError = maskSecrets(error)
+        let policy = step.on_fail ?? "abort"
+        reports.append(StepReport(id: stepId, intent: shownIntent, status: "fail",
+                                  strategy: strategy, ms: ms, error: shownError, detail: shownDetail,
+                                  nonfatal: policy == "abort" ? nil : true))
+        print("  ✗ \(stepId) \(shownIntent) — \(shownError) (\(ms)ms)")
+        switch step.on_fail ?? "abort" {
+        case "next_item": skipIteration = true
+        case "continue": break
+        default: aborted = true
         }
     } else {
-        reports.append(StepReport(id: stepId, intent: step.intent, status: "ok",
-                                  strategy: strategy, ms: ms, error: nil, detail: detail))
-        let extra = detail.map { " — \($0)" } ?? ""
-        print("  ✓ \(stepId) \(step.intent) (\(ms)ms, \(strategy ?? "-"))\(extra)")
+        reports.append(StepReport(id: stepId, intent: shownIntent, status: "ok",
+                                  strategy: strategy, ms: ms, error: nil, detail: shownDetail))
+        let extra = shownDetail.map { " — \($0)" } ?? ""
+        print("  ✓ \(stepId) \(shownIntent) (\(ms)ms, \(strategy ?? "-"))\(extra)")
     }
 
     usleep(useconds_t(stepDelayMs * 1000))
@@ -321,7 +413,7 @@ for step in pb.steps {
     execute(step, idPrefix: "")
 }
 
-let ok = !aborted && reports.allSatisfy { $0.status == "ok" }
+let ok = !aborted && reports.allSatisfy { $0.status == "ok" || $0.nonfatal == true }
 var reportInputs: [String: String] = [:]
 for input in pb.inputs ?? [] {
     if let v = vars[input.name] as? String { reportInputs[input.name] = v }

@@ -20,23 +20,23 @@
       "id": "s1b",
       "intent": "Close any open overlay in WhatsApp",
       "do": "ui.key",
-      "value": "esc",
       "target": {
         "app": "WhatsApp"
-      }
+      },
+      "value": "esc"
     },
     {
       "id": "s1c",
       "intent": "Close a second overlay layer if present",
       "do": "ui.key",
-      "value": "esc",
       "target": {
         "app": "WhatsApp"
-      }
+      },
+      "value": "esc"
     },
     {
-      "id": "s2",
-      "intent": "Open my self-chat (Moi)",
+      "id": "s2a",
+      "intent": "Click WhatsApp search",
       "do": "ui.click",
       "target": {
         "app": "WhatsApp",
@@ -44,15 +44,49 @@
           "title_contains": "WhatsApp"
         },
         "a11y": {
-          "role": "AXButton",
-          "description": "Moi"
+          "role": "*",
+          "description": "Search"
         },
         "fallback_point": {
-          "x": 184,
-          "y": 670
+          "x": 139,
+          "y": 97
         }
       },
-      "timeout_ms": 10000
+      "timeout_ms": 8000
+    },
+    {
+      "id": "s2b",
+      "intent": "Search for my self-chat",
+      "do": "ui.type",
+      "value": "Moi"
+    },
+    {
+      "id": "s2c",
+      "intent": "Let results appear",
+      "do": "wait",
+      "value": "900"
+    },
+    {
+      "id": "s2d",
+      "intent": "Open the Moi result",
+      "do": "ui.click",
+      "target": {
+        "app": "WhatsApp",
+        "window": {
+          "title_contains": "WhatsApp"
+        },
+        "a11y": {
+          "role": "*",
+          "description": "Moi"
+        }
+      },
+      "timeout_ms": 8000
+    },
+    {
+      "id": "s2e",
+      "intent": "Let the conversation load",
+      "do": "wait",
+      "value": "800"
     },
     {
       "id": "s3",
@@ -67,11 +101,23 @@
           "role": "AXWindow"
         }
       },
+      "timeout_ms": 15000,
       "capture": {
         "into": "whatsapp_text",
         "scope": "subtree"
-      },
-      "timeout_ms": 15000
+      }
+    },
+    {
+      "id": "s7",
+      "intent": "List the receipt messages to open",
+      "do": "judge",
+      "timeout_ms": 200000,
+      "prompt": "The data field whatsapp_text is the accessibility text of my WhatsApp self-chat ('Moi'). Media messages appear with captions like 'Your photo, 15Julyat12:59' or 'Your Live Photo, 14Julyat16:07'. Extract a JSON array (max 3, most recent first) of the distinct PHOTO messages likely to be receipts, each: {\"caption\": \"<verbatim caption substring, 10-60 chars, exactly as written>\", \"date\": \"<date from the caption, e.g. '15 July'>\"}. Exclude PDFs, links, albums with many photos, and UI labels. Output only the JSON array.",
+      "input_vars": [
+        "whatsapp_text"
+      ],
+      "into": "media_msgs",
+      "output": "json"
     },
     {
       "id": "s4",
@@ -88,10 +134,10 @@
       "id": "s5a",
       "intent": "Open Chrome tab search",
       "do": "ui.key",
-      "value": "cmd+shift+a",
       "target": {
         "app": "Google Chrome"
-      }
+      },
+      "value": "cmd+shift+a"
     },
     {
       "id": "s5b",
@@ -103,10 +149,10 @@
       "id": "s5c",
       "intent": "Jump to the signed-in Outlook tab",
       "do": "ui.key",
-      "value": "return",
       "target": {
         "app": "Google Chrome"
       },
+      "value": "return",
       "verify": {
         "window_title_contains": "Outlook",
         "wait_ms": 1200
@@ -156,23 +202,11 @@
           "role": "AXWebArea"
         }
       },
+      "timeout_ms": 15000,
       "capture": {
         "into": "calendar_text",
         "scope": "subtree"
-      },
-      "timeout_ms": 15000
-    },
-    {
-      "id": "s7",
-      "intent": "Extract the expenses from my self-chat",
-      "do": "judge",
-      "prompt": "The data field whatsapp_text is the accessibility text of my WhatsApp window. The conversation shown is my self-chat ('Moi' / 'Sent to Moi') where I forward expenses. Messages are either text expenses, or photo/album receipts whose captions only reveal a date (e.g. 'Your photo, 15Julyat12:59' or 'Your album with 21 photos'). Extract a JSON array, one object per distinct expense-like message, newest last, each with string fields: date (as best recoverable from the caption or text, e.g. '15 July', else ''), amount (number + currency if present in text, else ''), desc (2-4 words; use 'photo receipt' or 'photo album receipt' for image-only messages), person_hint (a name if the text mentions one, else ''). Ignore chat-list entries for other conversations, UI labels, and anything that is clearly not an expense record. Maximum 12 items. Output only the JSON array.",
-      "input_vars": [
-        "whatsapp_text"
-      ],
-      "into": "expenses",
-      "output": "json",
-      "timeout_ms": 200000
+      }
     },
     {
       "id": "s8",
@@ -189,10 +223,10 @@
       "id": "s9",
       "intent": "Create a fresh log document",
       "do": "ui.key",
-      "value": "cmd+n",
       "target": {
         "app": "TextEdit"
-      }
+      },
+      "value": "cmd+n"
     },
     {
       "id": "s10",
@@ -216,19 +250,107 @@
     },
     {
       "id": "s12",
-      "intent": "Match and log every expense",
+      "intent": "Open, read, and log each receipt",
       "do": "foreach",
-      "items": "{{expenses}}",
-      "as": "expense",
-      "max_iterations": 12,
+      "items": "{{media_msgs}}",
+      "as": "m",
       "steps": [
         {
           "id": "a",
-          "intent": "Classify {{expense.desc}} ({{expense.date}}) as sourcing or dd",
+          "intent": "Open the receipt ({{m.caption}})",
+          "do": "ui.click",
+          "target": {
+            "app": "WhatsApp",
+            "window": {
+              "title_contains": "WhatsApp"
+            },
+            "a11y": {
+              "role": "*",
+              "description": "{{m.caption}}"
+            }
+          },
+          "on_fail": "next_item",
+          "timeout_ms": 12000
+        },
+        {
+          "id": "a2",
+          "intent": "Wait in case it needs to download",
+          "do": "wait",
+          "value": "2000"
+        },
+        {
+          "id": "a3",
+          "intent": "Open it (second click if it was downloading)",
+          "do": "ui.click",
+          "target": {
+            "app": "WhatsApp",
+            "window": {
+              "title_contains": "WhatsApp"
+            },
+            "a11y": {
+              "role": "*",
+              "description": "{{m.caption}}"
+            }
+          },
+          "on_fail": "continue",
+          "timeout_ms": 6000
+        },
+        {
+          "id": "b",
+          "intent": "Let it open full size",
+          "do": "wait",
+          "value": "1200"
+        },
+        {
+          "id": "c",
+          "intent": "Photograph the opened receipt",
+          "do": "capture",
+          "target": {
+            "app": "WhatsApp",
+            "window": {
+              "title_contains": "WhatsApp"
+            },
+            "a11y": {
+              "role": "AXWindow"
+            }
+          },
+          "timeout_ms": 12000,
+          "capture": {
+            "into": "receipt_shot",
+            "scope": "screenshot"
+          }
+        },
+        {
+          "id": "d",
+          "intent": "Read the receipt",
           "do": "judge",
-          "prompt": "One of my expenses (field expense) and the accessibility text of my Outlook calendar (field calendar_text). I work in growth equity: 'sourcing' = meeting a company/founder we might invest in for the first time; 'dd' = diligence on an active deal (experts, management sessions, references, advisors). Using the meeting titles/attendees nearest the expense's date (if the date is absent or nothing matches, default to sourcing), answer sourcing or dd.",
+          "timeout_ms": 200000,
+          "prompt": "The attached image receipt_shot should show one receipt/document opened full-size in WhatsApp (context caption in field m). If a receipt IS readable, return JSON: {\"amount\": \"<total with currency as printed>\", \"merchant\": \"<vendor name>\", \"date\": \"<date printed, else caption date>\", \"kindhint\": \"<2-4 words>\"}. If the image shows only the chat (no opened receipt), return {\"amount\": \"\", \"merchant\": \"\", \"date\": \"<caption date>\", \"kindhint\": \"receipt not opened\"}. Output only the JSON object.",
           "input_vars": [
-            "expense",
+            "m",
+            "receipt_shot"
+          ],
+          "into": "r",
+          "output": "json"
+        },
+        {
+          "id": "e",
+          "intent": "Close the viewer",
+          "do": "ui.key",
+          "target": {
+            "app": "WhatsApp"
+          },
+          "value": "esc",
+          "on_fail": "continue"
+        },
+        {
+          "id": "f",
+          "intent": "Classify {{r.kindhint}} as sourcing or dd",
+          "do": "judge",
+          "timeout_ms": 200000,
+          "prompt": "One expense (field r, read off a receipt) and my Outlook calendar text (field calendar_text). 'sourcing' = first meeting a company/founder we might invest in; 'dd' = diligence on an active deal. Using meetings nearest the expense date (default sourcing if nothing matches), answer sourcing or dd.",
+          "input_vars": [
+            "r",
             "calendar_text"
           ],
           "into": "kind",
@@ -236,36 +358,30 @@
             "sourcing",
             "dd"
           ],
-          "model": "claude-sonnet-5",
-          "timeout_ms": 200000
+          "model": "claude-sonnet-5"
         },
         {
-          "id": "b",
-          "intent": "Identify who {{expense.desc}} relates to",
-          "do": "judge",
-          "prompt": "Same expense (field expense) and calendar (field calendar_text). Answer with the person/company this expense most plausibly relates to, as a short string like 'Jane Doe (Acme)' — prefer a name in the expense itself, else the calendar meeting nearest its date. If nothing matches, answer exactly: unknown.",
-          "input_vars": [
-            "expense",
-            "calendar_text"
-          ],
-          "into": "person",
-          "output": "text",
-          "model": "claude-sonnet-5",
-          "timeout_ms": 200000
-        },
-        {
-          "id": "c",
-          "intent": "Log {{expense.desc}}",
+          "id": "g",
+          "intent": "Log {{r.kindhint}}",
           "do": "ui.type",
-          "value": "\n{{expense.date}} | {{expense.amount}} | {{expense.desc}} | {{person}} | {{kind}}"
+          "target": {
+            "app": "TextEdit",
+            "window": {
+              "title_contains": "Untitled"
+            },
+            "a11y": {
+              "role": "AXTextArea"
+            }
+          },
+          "value": "\n{{r.date}} | {{r.amount}} | {{r.merchant}} | {{r.kindhint}} | {{kind}}"
         }
-      ]
+      ],
+      "max_iterations": 3
     },
     {
       "id": "s13",
       "intent": "Verify the log landed",
       "do": "wait",
-      "value": "300",
       "target": {
         "app": "TextEdit",
         "window": {
@@ -275,8 +391,9 @@
           "role": "AXTextArea"
         }
       },
+      "value": "300",
       "verify": {
-        "element_value_contains": "{{expenses.0.desc}}",
+        "element_value_contains": "|",
         "wait_ms": 300
       }
     }

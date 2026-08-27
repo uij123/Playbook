@@ -14,9 +14,15 @@ export interface RefineContext {
  * The runtime `judge` step reuses the same Completers via judge.ts, so every
  * model the compiler supports also powers in-playbook decisions.
  */
+export interface JudgeImage {
+  /** base64-encoded image bytes */
+  data: string;
+  media_type: string;
+}
+
 export interface Completer {
   name: string;
-  complete(system: string, user: string): Promise<string>;
+  complete(system: string, user: string, images?: JudgeImage[]): Promise<string>;
 }
 
 export interface ModelProvider {
@@ -89,12 +95,28 @@ export function anthropicCompleter(model?: string): Completer {
   const client = new Anthropic();
   return {
     name: `anthropic/${resolved}`,
-    async complete(system, user) {
+    async complete(system, user, images) {
+      const content: Anthropic.ContentBlockParam[] =
+        images && images.length > 0
+          ? [
+              ...images.map(
+                (img): Anthropic.ImageBlockParam => ({
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: img.media_type as "image/png",
+                    data: img.data,
+                  },
+                }),
+              ),
+              { type: "text", text: user },
+            ]
+          : [{ type: "text", text: user }];
       const response = await client.messages.create({
         model: resolved,
         max_tokens: 16000,
         system,
-        messages: [{ role: "user", content: user }],
+        messages: [{ role: "user", content }],
       });
       if (response.stop_reason === "refusal") {
         throw new Error("model declined the request");
@@ -122,9 +144,19 @@ export function openaiCompleter(model?: string): Completer {
   const apiKey = process.env.OPENAI_API_KEY ?? "";
   return {
     name: `openai-compatible/${resolved} @ ${new URL(baseURL).host}`,
-    async complete(system, user) {
+    async complete(system, user, images) {
       const headers: Record<string, string> = { "content-type": "application/json" };
       if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+      const userContent =
+        images && images.length > 0
+          ? [
+              ...images.map((img) => ({
+                type: "image_url",
+                image_url: { url: `data:${img.media_type};base64,${img.data}` },
+              })),
+              { type: "text", text: user },
+            ]
+          : user;
       const res = await fetch(`${baseURL}/chat/completions`, {
         method: "POST",
         headers,
@@ -133,7 +165,7 @@ export function openaiCompleter(model?: string): Completer {
           temperature: 0,
           messages: [
             { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "user", content: userContent },
           ],
         }),
       });

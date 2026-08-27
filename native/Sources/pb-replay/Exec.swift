@@ -369,6 +369,30 @@ final class Exec {
         return pieces.joined(separator: "\n")
     }
 
+    /// Screenshot the target element's frame (global point coordinates match
+    /// screencapture -R). Returns the absolute file path.
+    func screenshotElement(_ el: AXUIElement, playbook: String, stepId: String) throws -> String {
+        guard let frame = AX.frame(el), frame.width > 4, frame.height > 4 else {
+            throw StepFailure(message: "capture screenshot: element has no usable frame")
+        }
+        let dir = "runs/captures"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let stamp = Int(Date().timeIntervalSince1970)
+        let file = "\(dir)/\(playbook)-\(stepId)-\(stamp).png"
+        let abs = URL(fileURLWithPath: file).standardizedFileURL.path
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "-t", "png",
+                       "-R\(Int(frame.origin.x)),\(Int(frame.origin.y)),\(Int(frame.width)),\(Int(frame.height))",
+                       abs]
+        try? p.run()
+        p.waitUntilExit()
+        guard FileManager.default.fileExists(atPath: abs) else {
+            throw StepFailure(message: "capture screenshot: screencapture produced no file (Screen Recording permission?)")
+        }
+        return abs
+    }
+
     // MARK: - Judge (v0.2)
 
     /// Run the model-backed judge helper (a subprocess, so runtime decisions use

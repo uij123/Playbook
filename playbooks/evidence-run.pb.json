@@ -1,0 +1,126 @@
+{
+  "playbook": "evidence-run",
+  "version": "0.1.0",
+  "description": "Opens a new TextEdit document, approves the system permission prompt that appears, and types a short evidence note into the document.",
+  "created": "2026-08-10T05:54:41Z",
+  "inputs": [],
+  "credentials": [],
+  "steps": [
+    {
+      "id": "s1",
+      "intent": "Bring TextEdit to the front",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      }
+    },
+    {
+      "id": "s2",
+      "intent": "Open a new document",
+      "do": "ui.key",
+      "target": {
+        "app": "TextEdit"
+      },
+      "value": "cmd+n"
+    },
+    {
+      "id": "s3",
+      "intent": "Click into the document body",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 645,
+          "y": 529
+        }
+      }
+    },
+    {
+      "id": "s4",
+      "intent": "Go to the system permission prompt",
+      "do": "app.activate",
+      "target": {
+        "app": "UserNotificationCenter"
+      },
+      "verify": {
+        "frontmost_app": "UserNotificationCenter"
+      }
+    },
+    {
+      "id": "s5",
+      "intent": "Grant the requested permission",
+      "do": "ui.click",
+      "target": {
+        "app": "UserNotificationCenter",
+        "a11y": {
+          "role": "AXButton",
+          "title": "Allow"
+        },
+        "fallback_point": {
+          "x": 691.47265625,
+          "y": 458.1953125
+        }
+      }
+    },
+    {
+      "id": "s6",
+      "intent": "Return to TextEdit",
+      "do": "app.activate",
+      "target": {
+        "app": "TextEdit"
+      },
+      "verify": {
+        "frontmost_app": "TextEdit"
+      }
+    },
+    {
+      "id": "s7",
+      "intent": "Click back into the document body",
+      "do": "ui.click",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 645,
+          "y": 529
+        }
+      }
+    },
+    {
+      "id": "s8",
+      "intent": "Type the evidence note into the document",
+      "do": "ui.type",
+      "target": {
+        "app": "TextEdit",
+        "window": {
+          "title_contains": "Untitled"
+        },
+        "a11y": {
+          "role": "AXTextArea"
+        },
+        "fallback_point": {
+          "x": 645,
+          "y": 529
+        }
+      },
+      "value": "Screenshot evidence run.",
+      "verify": {
+        "element_value_contains": "Screenshot evidence run."
+      }
+    }
+  ]
+}

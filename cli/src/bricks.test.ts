@@ -152,3 +152,39 @@ test("runJudge json mode parses on the retry", async () => {
   assert.ok(result.ok);
   assert.deepEqual(result.ok ? result.value : null, { a: 1 });
 });
+
+test("splitImageRefs separates image references from text data", async () => {
+  const { splitImageRefs } = await import("./judge.js");
+  const { textData, imageRefs } = splitImageRefs({
+    caption: "Your photo",
+    shot: { __image: "/tmp/a.png" },
+    batch: [{ __image: "/tmp/b.png" }, { __image: "/tmp/c.png" }],
+  });
+  assert.equal(imageRefs.length, 3);
+  assert.equal(imageRefs[0].path, "/tmp/a.png");
+  assert.match(String(textData.shot), /attached image/);
+  assert.equal(textData.caption, "Your photo");
+});
+
+test("findSecretRefs extracts unique secret names from playbook text", async () => {
+  const { findSecretRefs } = await import("./secrets.js");
+  const refs = findSecretRefs(
+    JSON.stringify({ steps: [{ value: "user {{secret.email_user}} pw {{ secret.email_pw }} again {{secret.email_pw}}" }] }),
+  );
+  assert.deepEqual(refs, ["email_pw", "email_user"]);
+});
+
+test("schema accepts screenshot capture scope and next_item on_fail", () => {
+  const ok = PlaybookSchema.safeParse({
+    ...BASE,
+    steps: [
+      {
+        id: "s1", intent: "shot", do: "capture",
+        target: { app: "A", a11y: { role: "AXWindow" } },
+        capture: { into: "img", scope: "screenshot" },
+        on_fail: "next_item",
+      },
+    ],
+  });
+  assert.ok(ok.success, JSON.stringify(ok.success ? "" : ok.error.issues));
+});

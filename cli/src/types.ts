@@ -81,8 +81,12 @@ export interface PBCapture {
   into: string;
   /** which accessibility attribute to read (default "value") */
   attribute?: "value" | "title" | "description" | null;
-  /** "element" reads one node; "subtree" concatenates all text under it */
-  scope?: "element" | "subtree" | null;
+  /**
+   * "element" reads one node; "subtree" concatenates all text under it;
+   * "screenshot" grabs the target's pixels as an image the judge can see
+   * (the variable holds an image reference usable in input_vars)
+   */
+  scope?: "element" | "subtree" | "screenshot" | null;
 }
 
 export type PBStepKind =
@@ -104,7 +108,7 @@ export interface PBStep {
   clicks?: number | null;
   button?: "left" | "right" | null;
   verify?: PBVerify | null;
-  on_fail?: "abort" | "continue" | null;
+  on_fail?: "abort" | "continue" | "next_item" | null;
   timeout_ms?: number | null;
   notes?: string | null;
   // capture
@@ -169,7 +173,7 @@ export const VerifySchema: z.ZodType<PBVerify> = z.object({
 export const CaptureSchema: z.ZodType<PBCapture> = z.object({
   into: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   attribute: z.enum(["value", "title", "description"]).nullish(),
-  scope: z.enum(["element", "subtree"]).nullish(),
+  scope: z.enum(["element", "subtree", "screenshot"]).nullish(),
 });
 
 export const StepSchema: z.ZodType<PBStep> = z.lazy(() =>
@@ -192,7 +196,7 @@ export const StepSchema: z.ZodType<PBStep> = z.lazy(() =>
       clicks: z.number().int().min(1).max(2).nullish(),
       button: z.enum(["left", "right"]).nullish(),
       verify: VerifySchema.nullish(),
-      on_fail: z.enum(["abort", "continue"]).nullish(),
+      on_fail: z.enum(["abort", "continue", "next_item"]).nullish(),
       timeout_ms: z.number().int().nullish(),
       notes: z.string().nullish(),
       capture: CaptureSchema.nullish(),

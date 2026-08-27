@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Playbooks Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1216; --panel: #161b22; --card: #1c232c;
+    --line: #2b3440; --text: #e6edf3; --dim: #8b98a5; --accent: #4da3ff;
+    --judge: #e3b341; --capture: #58a6ff; --loop: #bc8cff; --ok: #3fb950; --fail: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "SF Pro Text", sans-serif; height: 100vh; display: flex; overflow: hidden; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  #sidebar { width: 300px; min-width: 300px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  #sidebar h1 { font-size: 15px; padding: 14px 16px 10px; letter-spacing: .3px; }
+  #sidebar h1 span { color: var(--dim); font-weight: 400; }
+  #library { overflow-y: auto; flex: 1; padding: 0 8px 12px; }
+  .pb-card { padding: 10px 10px 8px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: var(--card); }
+  .pb-card:hover { border-color: var(--accent); }
+  .pb-card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pb-card .nm { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .pb-card .ds { color: var(--dim); font-size: 12px; margin: 3px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .badges { display: flex; gap: 5px; flex-wrap: wrap; }
+  .badge { font-size: 10.5px; padding: 1px 7px; border-radius: 10px; background: #22303e; color: var(--dim); }
+  .badge.det { background: #16311f; color: var(--ok); }
+  .badge.jdg { background: #3a2f13; color: var(--judge); }
+  .badge.sec { background: #33222e; color: #e18cc0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.fail { background: var(--fail); } .dot.none { background: #444c56; }
+
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  #topbar .title { font-size: 16px; font-weight: 700; }
+  #topbar .desc { color: var(--dim); font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #detmeter { font-size: 11px; color: var(--dim); text-align: right; }
+  #detmeter b { color: var(--ok); }
+  button { background: #22303e; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.run { background: #238636; border-color: #238636; }
+  button.mini { padding: 1px 7px; font-size: 11px; background: transparent; border-color: transparent; color: var(--dim); }
+  button.mini:hover { color: var(--text); border-color: var(--line); }
+
+  #editor { flex: 1; overflow-y: auto; padding: 18px 22px 60px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-left: 4px solid #3d4854; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .step.judge { border-left-color: var(--judge); }
+  .step.capture { border-left-color: var(--capture); }
+  .step.foreach { border-left-color: var(--loop); }
+  .step-head { display: flex; align-items: center; gap: 8px; }
+  .glyph { font-size: 13px; width: 18px; text-align: center; }
+  .kind { font-size: 10.5px; color: var(--dim); min-width: 86px; }
+  .intent { flex: 1; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--text); font-size: 13.5px; font-weight: 600; padding: 3px 6px; }
+  .intent:hover, .intent:focus { border-color: var(--line); background: #12161c; outline: none; }
+  .ctrl { display: flex; gap: 2px; opacity: .35; }
+  .step:hover .ctrl { opacity: 1; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px; margin-top: 8px; }
+  .fields.wide { grid-template-columns: 1fr; }
+  label.f { display: flex; flex-direction: column; gap: 2px; font-size: 10.5px; color: var(--dim); }
+  label.f input, label.f select, label.f textarea { background: #12161c; border: 1px solid var(--line); border-radius: 5px; color: var(--text); padding: 5px 7px; font-size: 12.5px; font-family: inherit; }
+  label.f textarea { min-height: 64px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .choices { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .choice-chip { border: 1px solid var(--judge); color: var(--judge); border-radius: 12px; padding: 1px 10px; font-size: 11.5px; }
+  .diamond { color: var(--judge); }
+  .kids { margin: 8px 0 2px 26px; padding-left: 12px; border-left: 2px dashed #4a3f6b; }
+  .adder { text-align: center; margin: 2px 0 8px; }
+  .adder select { background: #161b22; color: var(--dim); border: 1px dashed var(--line); border-radius: 6px; padding: 3px 8px; font-size: 11.5px; }
+
+  #drawer { border-top: 1px solid var(--line); background: #0c0f13; height: 0; transition: height .15s; overflow: hidden; display: flex; flex-direction: column; }
+  #drawer.open { height: 300px; }
+  #drawer .dhead { display: flex; gap: 14px; padding: 6px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--dim); align-items: center; }
+  #console { flex: 1; overflow-y: auto; padding: 10px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: pre-wrap; color: #c9d1d9; }
+  #history { flex: 1; overflow-y: auto; padding: 10px 14px; display: none; font-size: 12.5px; }
+  .runrow { display: flex; gap: 10px; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+  .runrow:hover { background: #161b22; }
+  #toast { position: fixed; bottom: 18px; right: 18px; background: #22303e; border: 1px solid var(--line); padding: 9px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 460px; }
+  #toast.show { opacity: 1; }
+  #empty { color: var(--dim); padding: 60px; text-align: center; }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>▶ Playbooks <span>Studio</span></h1>
+    <div id="library"></div>
+  </div>
+  <div id="main">
+    <div id="topbar">
+      <div class="title" id="t-name">—</div>
+      <div class="desc" id="t-desc"></div>
+      <div id="detmeter"></div>
+      <button id="btn-hist">History</button>
+      <button class="primary" id="btn-save">Save</button>
+      <button class="run" id="btn-run">Run ▷</button>
+    </div>
+    <div id="editor"><div id="empty">Select a playbook</div></div>
+    <div id="drawer">
+      <div class="dhead">
+        <span id="d-title">console</span>
+        <span style="flex:1"></span>
+        <button class="mini" onclick="closeDrawer()">✕ close</button>
+      </div>
+      <div id="console"></div>
+      <div id="history"></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+let LIB = [];        // library entries
+let FILE = null;     // selected file
+let PB = null;       // working playbook object
+
+const KINDS = ["app.activate","ui.click","ui.type","ui.key","wait","capture","judge","foreach"];
+const GLYPH = { "app.activate":"⬈", "ui.click":"◉", "ui.type":"⌨", "ui.key":"⌘", "wait":"⏱", "capture":"⤓", "judge":"◇", "foreach":"↻" };
+const CLASS = { "judge":"judge", "capture":"capture", "foreach":"foreach" };
+
+function toast(msg, ms=2600) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), ms);
+}
+
+async function loadLibrary(keepSel) {
+  LIB = await (await fetch("/api/playbooks")).json();
+  const el = document.getElementById("library");
+  el.innerHTML = "";
+  for (const p of LIB) {
+    const c = document.createElement("div");
+    c.className = "pb-card" + (p.file === FILE ? " sel" : "");
+    const dot = p.lastRun ? (p.lastRun.result === "ok" ? "ok" : "fail") : "none";
+    c.innerHTML = `
+      <div class="nm"><span class="dot ${dot}"></span>${esc(p.name)}</div>
+      <div class="ds">${esc(p.description || "")}</div>
+      <div class="badges">
+        <span class="badge">${p.steps} steps</span>
+        ${p.judges ? `<span class="badge jdg">◇ ${p.judges} judge${p.judges>1?"s":""}</span>` : ""}
+        <span class="badge det">${p.determinism}% deterministic</span>
+        ${p.secrets.length ? `<span class="badge sec">🔒 ${p.secrets.length}</span>` : ""}
+        ${p.runCount ? `<span class="badge">${p.runCount} runs</span>` : ""}
+      </div>`;
+    c.onclick = () => openPlaybook(p.file);
+    el.appendChild(c);
+  }
+  if (keepSel && FILE) markSel();
+}
+
+function markSel() {
+  document.querySelectorAll(".pb-card").forEach((c, i) => c.classList.toggle("sel", LIB[i]?.file === FILE));
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch])); }
+
+async function openPlaybook(file) {
+  FILE = file;
+  PB = await (await fetch(`/api/playbook?f=${encodeURIComponent(file)}`)).json();
+  markSel();
+  render();
+}
+
+function detStats(steps) {
+  let total = 0, judges = 0;
+  for (const s of steps || []) {
+    total++; if (s.do === "judge") judges++;
+    if (s.steps) { const i = detStats(s.steps); total += i.total; judges += i.judges; }
+  }
+  return { total, judges };
+}
+
+function render() {
+  document.getElementById("t-name").textContent = PB.playbook;
+  document.getElementById("t-desc").textContent = PB.description || "";
+  const d = detStats(PB.steps);
+  document.getElementById("detmeter").innerHTML =
+    `<b>${d.total ? Math.round((d.total-d.judges)/d.total*100) : 100}%</b> deterministic<br>${d.judges} judge step${d.judges===1?"":"s"} of ${d.total}`;
+  const ed = document.getElementById("editor");
+  ed.innerHTML = "";
+  ed.appendChild(renderList(PB.steps));
+}
+
+function renderList(arr) {
+  const wrap = document.createElement("div");
+  arr.forEach((step, i) => {
+    wrap.appendChild(renderStep(step, arr, i));
+    wrap.appendChild(adder(arr, i + 1));
+  });
+  if (arr.length === 0) wrap.appendChild(adder(arr, 0));
+  return wrap;
+}
+
+function adder(arr, at) {
+  const a = document.createElement("div");
+  a.className = "adder";
+  const sel = document.createElement("select");
+  sel.innerHTML = `<option value="">+ add step…</option>` + KINDS.map(k => `<option>${k}</option>`).join("");
+  sel.onchange = () => {
+    if (!sel.value) return;
+    arr.splice(at, 0, templateStep(sel.value, arr));
+    render();
+  };
+  a.appendChild(sel);
+  return a;
+}
+
+function templateStep(kind, arr) {
+  const id = "n" + Math.random().toString(36).slice(2, 6);
+  const base = { id, intent: "New " + kind + " step", do: kind };
+  if (kind === "app.activate") base.target = { app: "TextEdit" };
+  if (kind === "ui.click") base.target = { app: "", a11y: { role: "AXButton", title: "" } };
+  if (kind === "ui.type") base.value = "";
+  if (kind === "ui.key") base.value = "cmd+n";
+  if (kind === "wait") base.value = "500";
+  if (kind === "capture") { base.target = { app: "", a11y: { role: "AXWindow" } }; base.capture = { into: "captured", scope: "subtree" }; }
+  if (kind === "judge") { base.prompt = "Describe the decision…"; base.input_vars = []; base.into = "result"; base.output = "text"; }
+  if (kind === "foreach") { base.items = "{{list}}"; base.as = "item"; base.steps = []; }
+  return base;
+}
+
+function f(labelText, value, onch, opts) {
+  const l = document.createElement("label");
+  l.className = "f";
+  l.textContent = labelText;
+  let inp;
+  if (opts && opts.select) {
+    inp = document.createElement("select");
+    inp.innerHTML = opts.select.map(o => `<option ${o===value?"selected":""}>${o}</option>`).join("");
+  } else if (opts && opts.area) {
+    inp = document.createElement("textarea");
+    inp.value = value ?? "";
+  } else {
+    inp = document.createElement("input");
+    inp.value = value ?? "";
+    if (opts && opts.ph) inp.placeholder = opts.ph;
+  }
+  inp.onchange = () => onch(inp.value);
+  l.appendChild(inp);
+  return l;
+}
+
+function renderStep(step, arr, idx) {
+  const card = document.createElement("div");
+  card.className = "step " + (CLASS[step.do] || "");
+  const head = document.createElement("div");
+  head.className = "step-head";
+  head.innerHTML = `<span class="glyph ${step.do==="judge"?"diamond":""}">${GLYPH[step.do] || "•"}</span>
+    <span class="kind mono">${step.id}<br>${step.do}</span>`;
+  const intent = document.createElement("input");
+  intent.className = "intent";
+  intent.value = step.intent || "";
+  intent.onchange = () => { step.intent = intent.value; };
+  head.appendChild(intent);
+  const ctrl = document.createElement("div");
+  ctrl.className = "ctrl";
+  const mk = (t, fn) => { const b = document.createElement("button"); b.className = "mini"; b.textContent = t; b.onclick = fn; return b; };
+  ctrl.appendChild(mk("↑", () => { if (idx>0){ arr.splice(idx-1,0,arr.splice(idx,1)[0]); render(); } }));
+  ctrl.appendChild(mk("↓", () => { if (idx<arr.length-1){ arr.splice(idx+1,0,arr.splice(idx,1)[0]); render(); } }));
+  ctrl.appendChild(mk("✕", () => { arr.splice(idx,1); render(); }));
+  head.appendChild(ctrl);
+  card.appendChild(head);
+
+  const fields = document.createElement("div");
+  fields.className = "fields" + (step.do === "judge" ? " wide" : "");
+
+  if (["ui.type","ui.key","wait"].includes(step.do)) {
+    fields.appendChild(f(step.do === "wait" ? "milliseconds" : "value (variables ok: {{name}})", step.value, v => step.value = v));
+  }
+  if (step.target || ["ui.click","ui.type","capture","app.activate"].includes(step.do)) {
+    step.target = step.target || {};
+    fields.appendChild(f("app", step.target.app, v => step.target.app = v || undefined));
+    if (step.do !== "app.activate") {
+      step.target.a11y = step.target.a11y || { role: "" };
+      fields.appendChild(f("element role (* = any)", step.target.a11y.role, v => step.target.a11y.role = v));
+      fields.appendChild(f("element title", step.target.a11y.title, v => step.target.a11y.title = v || undefined));
+      fields.appendChild(f("element description", step.target.a11y.description, v => step.target.a11y.description = v || undefined));
+      fields.appendChild(f("window title contains", step.target.window && step.target.window.title_contains,
+        v => step.target.window = v ? { title_contains: v } : undefined));
+    }
+  }
+  if (step.do === "capture") {
+    step.capture = step.capture || { into: "" };
+    fields.appendChild(f("store into variable", step.capture.into, v => step.capture.into = v));
+    fields.appendChild(f("scope", step.capture.scope || "element", v => step.capture.scope = v,
+      { select: ["element","subtree","screenshot"] }));
+  }
+  if (step.do === "judge") {
+    fields.appendChild(f("prompt (the decision, spelled out)", step.prompt, v => step.prompt = v, { area: true }));
+    const row = document.createElement("div");
+    row.className = "fields";
+    row.appendChild(f("input variables (comma-sep)", (step.input_vars||[]).join(", "),
+      v => step.input_vars = v.split(",").map(s=>s.trim()).filter(Boolean)));
+    row.appendChild(f("store into", step.into, v => step.into = v));
+    row.appendChild(f("output", step.choices ? "choices" : (step.output || "text"), v => {
+      if (v === "choices") { step.choices = step.choices || ["yes","no"]; delete step.output; }
+      else { delete step.choices; step.output = v; }
+      render();
+    }, { select: ["text","json","choices"] }));
+    row.appendChild(f("model override (optional)", step.model, v => step.model = v || undefined, { ph: "claude-sonnet-5" }));
+    fields.appendChild(row);
+    if (step.choices) {
+      const ch = document.createElement("div");
+      ch.className = "choices";
+      ch.innerHTML = `<span class="diamond">◇ decision:</span>` + step.choices.map(c => `<span class="choice-chip">${esc(c)}</span>`).join("");
+      const edit = f("", step.choices.join(" | "), v => { step.choices = v.split("|").map(s=>s.trim()).filter(Boolean); render(); });
+      edit.style.flex = "1";
+      ch.appendChild(edit);
+      fields.appendChild(ch);
+    }
+  }
+  if (step.do === "foreach") {
+    fields.appendChild(f("items (a JSON-array variable)", step.items, v => step.items = v));
+    fields.appendChild(f("loop variable", step.as || "item", v => step.as = v));
+    fields.appendChild(f("max iterations", step.max_iterations ?? 100, v => step.max_iterations = parseInt(v) || 100));
+  }
+  const common = document.createElement("div");
+  common.className = "fields";
+  common.appendChild(f("on failure", step.on_fail || "abort", v => step.on_fail = v === "abort" ? undefined : v,
+    { select: ["abort","continue","next_item"] }));
+  common.appendChild(f("timeout ms", step.timeout_ms ?? "", v => step.timeout_ms = v ? parseInt(v) : undefined));
+  fields.appendChild(common);
+  card.appendChild(fields);
+
+  if (step.do === "foreach") {
+    step.steps = step.steps || [];
+    const kids = document.createElement("div");
+    kids.className = "kids";
+    kids.appendChild(renderList(step.steps));
+    card.appendChild(kids);
+  }
+  return card;
+}
+
+async function save() {
+  if (!FILE || !PB) return;
+  const res = await fetch(`/api/playbook?f=${encodeURIComponent(FILE)}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(PB),
+  });
+  const out = await res.json();
+  if (out.ok) { toast("✓ saved (schema valid)"); loadLibrary(true); }
+  else toast("✗ " + (out.issues ? out.issues.map(i=>i.message).join("; ") : out.error), 6000);
+}
+
+function openDrawer(mode) {
+  document.getElementById("drawer").classList.add("open");
+  document.getElementById("console").style.display = mode === "console" ? "block" : "none";
+  document.getElementById("history").style.display = mode === "history" ? "block" : "none";
+  document.getElementById("d-title").textContent = mode;
+}
+function closeDrawer() { document.getElementById("drawer").classList.remove("open"); }
+
+async function run() {
+  if (!FILE) return;
+  openDrawer("console");
+  const con = document.getElementById("console");
+  con.textContent = "▶ running " + FILE + " — hands off the machine…\n";
+  const res = await fetch(`/api/run?f=${encodeURIComponent(FILE)}`, { method: "POST" });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    con.textContent += dec.decode(value);
+    con.scrollTop = con.scrollHeight;
+  }
+  loadLibrary(true);
+}
+
+async function history() {
+  if (!PB) return;
+  openDrawer("history");
+  const h = document.getElementById("history");
+  const runs = await (await fetch(`/api/runs?name=${encodeURIComponent(PB.playbook)}`)).json();
+  h.innerHTML = runs.length ? "" : "<div style='color:var(--dim)'>no runs yet</div>";
+  for (const r of runs) {
+    const row = document.createElement("div");
+    row.className = "runrow";
+    row.innerHTML = `<span class="dot ${r.result==="ok"?"ok":"fail"}"></span>
+      <span class="mono">${esc(r.started)}</span><span>${r.steps} steps</span><span>${r.result}</span>`;
+    row.onclick = async () => {
+      const rep = await (await fetch(`/api/report?f=${encodeURIComponent(r.file)}`)).json();
+      const con = document.getElementById("console");
+      openDrawer("console");
+      con.textContent = rep.steps.map(s =>
+        `${s.status === "ok" ? "✓" : "✗"} ${s.id}  ${s.intent}${s.strategy ? "  ["+s.strategy+"]" : ""}${s.detail ? "\n    " + s.detail : ""}${s.error ? "\n    ERROR: " + s.error : ""}`
+      ).join("\n");
+    };
+    h.appendChild(row);
+  }
+}
+
+document.getElementById("btn-save").onclick = save;
+document.getElementById("btn-run").onclick = run;
+document.getElementById("btn-hist").onclick = history;
+loadLibrary();
+</script>
+</body>
+</html>

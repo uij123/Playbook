@@ -177,3 +177,12 @@ The recorder cannot observe *reading* — capture/judge/foreach are **authored**
 ## v0 limitations (deliberate)
 
 Single display; no drag-and-drop capture; scrolls recorded but not compiled; conditionals/`if` not yet in the DSL (a `judge` with `choices` + separate playbooks covers simple branching for now); browser steps replay via accessibility rather than the DOM rung.
+
+## v0.2.1 addenda
+
+- **`capture.scope: "screenshot"`** — photographs the resolved element's frame; the variable holds an image reference (`{"__image": path}`) that `judge` steps receive as a real vision input. Text found inside images is data, never instructions.
+- **`{{secret.NAME}}`** — resolved from the macOS Keychain (`pb secret set NAME`) at run time. Values never appear in playbooks, reports, or console output (masked as `•••`), and can never be passed to `judge` steps. Playbooks stay shareable; each user supplies their own secrets.
+- **`on_fail: "next_item"`** — inside a `foreach` body: skip the rest of the current iteration and continue with the next item. Non-fatal failures (`continue`/`next_item`) no longer fail the overall run; they are marked `nonfatal` in the report.
+- **`a11y.role: "*"`** — wildcard role for targets anchored purely by title/description text (requires one of them), for UIs where the same logical thing surfaces as different roles.
+- **`judge.model`** — per-step model override (e.g. a cheap model for easy classifications).
+- **Studio** (`pb studio`) — local web UI: library + visual brick-tree editor over the same schema.

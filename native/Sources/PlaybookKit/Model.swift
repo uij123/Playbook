@@ -241,9 +241,11 @@ public struct StepReport: Codable {
     /// Auditing payload for nondeterministic steps: what a judge returned,
     /// or how many items a foreach ran. Truncated.
     public var detail: String?
+    /// True when this failure was declared non-fatal (on_fail continue/next_item).
+    public var nonfatal: Bool?
 
     public init(id: String, intent: String, status: String, strategy: String?, ms: Int, error: String?,
-                detail: String? = nil) {
+                detail: String? = nil, nonfatal: Bool? = nil) {
         self.id = id
         self.intent = intent
         self.status = status
@@ -251,6 +253,7 @@ public struct StepReport: Codable {
         self.ms = ms
         self.error = error
         self.detail = detail
+        self.nonfatal = nonfatal
     }
 }
 

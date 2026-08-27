@@ -202,10 +202,15 @@ public enum AX {
     }
 
     private static func matchScore(_ el: AXUIElement, wantRole: String, wantTitle: String?, wantDesc: String?) -> Int? {
-        guard role(el) == wantRole else { return nil }
+        // "*" matches any role — for UI where the same kind of thing (e.g. a
+        // chat media message) surfaces as different roles per message type.
+        let wildcard = wantRole == "*"
+        if !wildcard {
+            guard role(el) == wantRole else { return nil }
+        }
 
         let want = (wantTitle ?? wantDesc)?.lowercased() ?? ""
-        if want.isEmpty { return 1 }
+        if want.isEmpty { return wildcard ? nil : 1 } // wildcard needs a text anchor
 
         let elTitle = (stringAttr(el, kAXTitleAttribute) ?? "").lowercased()
         let elDesc = (stringAttr(el, kAXDescriptionAttribute) ?? "").lowercased()
@@ -215,7 +220,7 @@ public enum AX {
         if elTitle == want || elDesc == want || elPlaceholder == want { return 3 }
         if elTitle.contains(want) || elDesc.contains(want) || elPlaceholder.contains(want) { return 2 }
         let textish = ["AXStaticText", "AXLink", "AXCell", "AXMenuItem", "AXRadioButton", "AXCheckBox", "AXPopUpButton"]
-        if textish.contains(wantRole) && elValue.contains(want) { return 2 }
+        if (wildcard || textish.contains(wantRole)) && elValue.contains(want) { return 2 }
         return nil
     }
 

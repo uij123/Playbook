@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { compileSession } from "./compile.js";
+import { findSecretRefs, listSecretNames, removeSecret, resolveSecretsFor, setSecret } from "./secrets.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const RECORD_BIN = path.join(ROOT, "native", ".build", "release", "pb-record");
@@ -213,7 +214,110 @@ program
     if (fs.existsSync(judgeJs)) {
       args.push("--judge-cmd", `'${process.execPath}' '${judgeJs}'`);
     }
-    runBinary(REPLAY_BIN, args);
+    // Resolve {{secret.NAME}} references from the Keychain here (the `security`
+    // tool created them, so no GUI prompt) and hand them to the replayer, which
+    // masks them in all output. Values never touch the playbook or the report.
+    const text = fs.readFileSync(path.resolve(playbook), "utf8");
+    const refs = findSecretRefs(text);
+    const env = { ...process.env };
+    if (refs.length > 0) {
+      const { secrets, missing } = resolveSecretsFor(text);
+      if (missing.length > 0) {
+        console.error(`error: missing secrets: ${missing.join(", ")}`);
+        console.error(`store them once with: pb secret set <name>`);
+        process.exit(64);
+      }
+      env.PB_SECRETS_JSON = JSON.stringify(secrets);
+      console.log(`using secrets: ${refs.join(", ")} (values masked everywhere)`);
+    }
+    const child = spawn(REPLAY_BIN, args, { stdio: "inherit", env });
+    process.on("SIGINT", () => {});
+    child.on("exit", (code, signal) => {
+      process.exit(signal ? 130 : code ?? 0);
+    });
+  });
+
+program
+  .command("studio")
+  .description("open Playbooks Studio — the visual library + brick-tree editor")
+  .option("--port <port>", "port to serve on", "5177")
+  .action(async (opts: { port: string }) => {
+    const { startStudio } = await import("./studio.js");
+    const port = parseInt(opts.port, 10) || 5177;
+    startStudio(port);
+    const url = `http://127.0.0.1:${port}`;
+    console.log(`● Playbooks Studio → ${url}  (Ctrl+C to stop)`);
+    spawn("open", [url], { stdio: "ignore" });
+  });
+
+const secret = program.command("secret").description("manage the local secrets vault (macOS Keychain)");
+
+secret
+  .command("set")
+  .description("store or update a secret (value read from hidden prompt or piped stdin)")
+  .argument("<name>", "secret name, referenced in playbooks as {{secret.<name>}}")
+  .action(async (name: string) => {
+    try {
+      let value: string;
+      if (process.stdin.isTTY) {
+        value = await new Promise<string>((resolve) => {
+          process.stdout.write(`value for ${name} (hidden): `);
+          const chunks: string[] = [];
+          const stdin = process.stdin;
+          stdin.setRawMode?.(true);
+          stdin.resume();
+          stdin.setEncoding("utf8");
+          const onData = (ch: string) => {
+            if (ch === "\r" || ch === "\n" || ch === "") {
+              stdin.setRawMode?.(false);
+              stdin.pause();
+              stdin.off("data", onData);
+              process.stdout.write("\n");
+              resolve(chunks.join(""));
+            } else if (ch === "") {
+              process.stdout.write("\n");
+              process.exit(130);
+            } else if (ch === "") {
+              chunks.pop();
+            } else {
+              chunks.push(ch);
+            }
+          };
+          stdin.on("data", onData);
+        });
+      } else {
+        value = fs.readFileSync(0, "utf8").replace(/\n$/, "");
+      }
+      if (!value) {
+        console.error("error: empty value");
+        process.exit(1);
+      }
+      setSecret(name, value);
+      console.log(`✓ secret '${name}' stored in the Keychain — reference it as {{secret.${name}}}`);
+    } catch (err) {
+      console.error(`error: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+  });
+
+secret
+  .command("list")
+  .description("list stored secret names (never values)")
+  .action(() => {
+    const names = listSecretNames();
+    if (names.length === 0) {
+      console.log("no secrets stored — add one with: pb secret set <name>");
+      return;
+    }
+    for (const n of names) console.log(`  {{secret.${n}}}`);
+  });
+
+secret
+  .command("rm")
+  .description("delete a secret from the Keychain")
+  .argument("<name>")
+  .action((name: string) => {
+    console.log(removeSecret(name) ? `✓ removed '${name}'` : `'${name}' was not in the Keychain`);
   });
 
 program
