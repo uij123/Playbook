@@ -188,3 +188,51 @@ test("schema accepts screenshot capture scope and next_item on_fail", () => {
   });
   assert.ok(ok.success, JSON.stringify(ok.success ? "" : ok.error.issues));
 });
+
+test("schema accepts stop with if_empty and stages; rejects bad stage refs", () => {
+  const base = {
+    ...BASE,
+    steps: [
+      { id: "s1", intent: "read", do: "capture", target: { app: "A", a11y: { role: "AXWindow" } }, capture: { into: "found" } },
+      { id: "s2", intent: "gate", do: "stop", if_empty: "found" },
+      { id: "s3", intent: "act", do: "ui.key", value: "cmd+s" },
+    ],
+  };
+  const ok = PlaybookSchema.safeParse({
+    ...base,
+    stages: [
+      { title: "Look for work", summary: "…", until: "s2" },
+      { title: "Do the work", until: "s3" },
+    ],
+  });
+  assert.ok(ok.success, JSON.stringify(ok.success ? "" : ok.error.issues));
+  const badId = PlaybookSchema.safeParse({ ...base, stages: [{ title: "x", until: "nope" }] });
+  assert.equal(badId.success, false);
+  const badOrder = PlaybookSchema.safeParse({
+    ...base,
+    stages: [{ title: "a", until: "s3" }, { title: "b", until: "s1" }],
+  });
+  assert.equal(badOrder.success, false);
+});
+
+test("parseAnnotation validates stage ids/order and extends coverage to the last step", async () => {
+  const { parseAnnotation } = await import("./studio.js");
+  const pb = {
+    ...BASE,
+    steps: [
+      { id: "s1", intent: "a", do: "wait" as const, value: "1" },
+      { id: "s2", intent: "b", do: "wait" as const, value: "1" },
+      { id: "s3", intent: "c", do: "wait" as const, value: "1" },
+    ],
+  };
+  const good = parseAnnotation(
+    '```json\n{"description":"Does things.","stages":[{"title":"First","summary":"s","until":"s1"},{"title":"Rest","until":"s2"}]}\n```',
+    pb,
+  );
+  assert.ok(good.ok);
+  assert.equal(good.ok ? good.stages[1].until : "", "s3"); // extended to cover s3
+  const unknown = parseAnnotation('{"description":"d","stages":[{"title":"x","until":"zz"}]}', pb);
+  assert.equal(unknown.ok, false);
+  const prose = parseAnnotation("Sure! Here is the plan…", pb);
+  assert.equal(prose.ok, false);
+});

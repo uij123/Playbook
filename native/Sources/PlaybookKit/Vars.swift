@@ -146,6 +146,10 @@ public enum Vars {
                     missing.append(name)
                 }
             }
+            if step.do == "stop", let cond = step.if_empty {
+                let r = root(of: cond)
+                if !available.contains(r), !missing.contains(r) { missing.append(r) }
+            }
             if let into = step.capture?.into { available.insert(into) }
             if step.do == "judge", let into = step.into { available.insert(into) }
             if step.do == "foreach" {

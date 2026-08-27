@@ -97,7 +97,8 @@ export type PBStepKind =
   | "wait"
   | "capture"
   | "judge"
-  | "foreach";
+  | "foreach"
+  | "stop";
 
 export interface PBStep {
   id: string;
@@ -130,6 +131,25 @@ export interface PBStep {
   as?: string | null;
   steps?: PBStep[] | null;
   max_iterations?: number | null;
+  // stop — graceful early exit ("if none, don't do anything")
+  /**
+   * variable path; if it is empty (missing, null, "", [] or {}) the run ends
+   * successfully here and the remaining steps are skipped. Omit for an
+   * unconditional graceful stop.
+   */
+  if_empty?: string | null;
+}
+
+/**
+ * A stage groups a contiguous run of top-level steps under a plain-language
+ * title + summary — the "boxes" a non-technical user sees. Stage k covers the
+ * steps after the previous stage's `until` through its own `until` (a top-level
+ * step id). Stages are presentation + intent; the runner ignores them.
+ */
+export interface PBStage {
+  title: string;
+  summary?: string | null;
+  until: string;
 }
 
 export interface PBInput {
@@ -147,6 +167,7 @@ export interface Playbook {
   inputs: PBInput[];
   credentials: { slot: string; scope?: string | null }[];
   steps: PBStep[];
+  stages?: PBStage[] | null;
 }
 
 export const A11ySchema: z.ZodType<PBA11y> = z.object({
@@ -190,6 +211,7 @@ export const StepSchema: z.ZodType<PBStep> = z.lazy(() =>
         "capture",
         "judge",
         "foreach",
+        "stop",
       ]),
       target: TargetSchema.nullish(),
       value: z.string().nullish(),
@@ -210,6 +232,7 @@ export const StepSchema: z.ZodType<PBStep> = z.lazy(() =>
       as: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/).nullish(),
       steps: z.array(StepSchema).nullish(),
       max_iterations: z.number().int().min(1).max(1000).nullish(),
+      if_empty: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*$/).nullish(),
     })
     .superRefine((s, ctx) => {
       if (s.do === "capture") {
@@ -239,15 +262,39 @@ export const InputDefSchema: z.ZodType<PBInput> = z.object({
   default: z.string().nullish(),
 });
 
-export const PlaybookSchema: z.ZodType<Playbook> = z.object({
-  playbook: z.string(),
-  version: z.string(),
-  description: z.string().nullish(),
-  created: z.string().nullish(),
-  inputs: z.array(InputDefSchema),
-  credentials: z.array(z.object({ slot: z.string(), scope: z.string().nullish() })),
-  steps: z.array(StepSchema).min(1),
+export const StageSchema: z.ZodType<PBStage> = z.object({
+  title: z.string().min(1),
+  summary: z.string().nullish(),
+  until: z.string().min(1),
 });
+
+export const PlaybookSchema: z.ZodType<Playbook> = z
+  .object({
+    playbook: z.string(),
+    version: z.string(),
+    description: z.string().nullish(),
+    created: z.string().nullish(),
+    inputs: z.array(InputDefSchema),
+    credentials: z.array(z.object({ slot: z.string(), scope: z.string().nullish() })),
+    steps: z.array(StepSchema).min(1),
+    stages: z.array(StageSchema).nullish(),
+  })
+  .superRefine((pb, ctx) => {
+    if (!pb.stages || pb.stages.length === 0) return;
+    const order = new Map(pb.steps.map((s, i) => [s.id, i]));
+    let prev = -1;
+    for (const st of pb.stages) {
+      const at = order.get(st.until);
+      if (at === undefined) {
+        ctx.addIssue({ code: "custom", message: `stage "${st.title}": until "${st.until}" is not a top-level step id` });
+        continue;
+      }
+      if (at <= prev) {
+        ctx.addIssue({ code: "custom", message: `stage "${st.title}": stages must cover steps in order (until "${st.until}" is out of order)` });
+      }
+      prev = at;
+    }
+  });
 
 /** Side data from the compiler that intentionally does not live in the playbook. */
 export interface DraftExtras {

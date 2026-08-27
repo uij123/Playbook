@@ -199,6 +199,9 @@ if AX.sessionLocked() {
 let exec = Exec(strict: strict)
 var reports: [StepReport] = []
 var aborted = false
+// Set by a `stop` step whose condition held: end the run successfully,
+// skipping the remaining steps.
+var stoppedEarly = false
 // Set by a failing child with on_fail "next_item": skip the rest of the current
 // foreach iteration and continue with the next item.
 var skipIteration = false
@@ -209,7 +212,7 @@ func truncate(_ s: String, _ n: Int = 300) -> String {
 }
 
 func execute(_ rawStep: PBStep, idPrefix: String) {
-    if aborted {
+    if aborted || stoppedEarly {
         reports.append(StepReport(id: idPrefix + rawStep.id, intent: rawStep.intent,
                                   status: "skipped", strategy: nil, ms: 0, error: nil))
         return
@@ -284,6 +287,32 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
             Thread.sleep(forTimeInterval: Double(ms) / 1000.0)
             strategy = "wait"
 
+        case "stop":
+            // Graceful early exit. With if_empty, stop only when the variable is
+            // empty (missing, null, "", [] or {}); the run still counts as OK.
+            strategy = "stop"
+            if let cond = step.if_empty {
+                let value = Vars.lookup(cond, in: vars)
+                let empty: Bool
+                switch value {
+                case nil, is NSNull: empty = true
+                case let s as String: empty = s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                case let a as [Any]: empty = a.isEmpty
+                case let d as [String: Any]: empty = d.isEmpty
+                default: empty = false
+                }
+                if empty {
+                    stoppedEarly = true
+                    detail = "\(cond) is empty — nothing to do, stopping here"
+                } else {
+                    let n = (value as? [Any])?.count
+                    detail = "\(cond) has \(n.map { "\($0) item(s)" } ?? "content") — continuing"
+                }
+            } else {
+                stoppedEarly = true
+                detail = "unconditional stop"
+            }
+
         case "capture":
             guard let spec = step.capture, let target = step.target else {
                 throw StepFailure(message: "capture requires capture.into and a target")
@@ -355,14 +384,14 @@ func execute(_ rawStep: PBStep, idPrefix: String) {
                 vars["\(loopVar)_index"] = NSNumber(value: i + 1)
                 for child in step.steps ?? [] {
                     execute(child, idPrefix: "\(stepId)#\(i + 1).")
-                    if aborted { break }
+                    if aborted || stoppedEarly { break }
                     if skipIteration {
                         skipIteration = false
                         print("  ↷ \(stepId)#\(i + 1) skipping to next item")
                         break
                     }
                 }
-                if aborted { break }
+                if aborted || stoppedEarly { break }
             }
             vars.removeValue(forKey: loopVar)
             vars.removeValue(forKey: "\(loopVar)_index")
@@ -413,14 +442,14 @@ for step in pb.steps {
     execute(step, idPrefix: "")
 }
 
-let ok = !aborted && reports.allSatisfy { $0.status == "ok" || $0.nonfatal == true }
+let ok = !aborted && reports.allSatisfy { $0.status != "fail" || $0.nonfatal == true }
 var reportInputs: [String: String] = [:]
 for input in pb.inputs ?? [] {
     if let v = vars[input.name] as? String { reportInputs[input.name] = v }
 }
 let report = RunReport(playbook: pb.playbook, started: startedISO, ended: PBJSON.isoNow(),
                        inputs: reportInputs, strict: strict, result: ok ? "ok" : "fail",
-                       steps: reports)
+                       steps: reports, stopped_early: stoppedEarly ? true : nil)
 
 try? FileManager.default.createDirectory(atPath: reportDir, withIntermediateDirectories: true)
 let stamp = startedISO.replacingOccurrences(of: ":", with: "-")
@@ -429,5 +458,6 @@ if let data = try? PBJSON.prettyEncoder().encode(report) {
     try? data.write(to: URL(fileURLWithPath: reportPath))
 }
 
+if stoppedEarly { print("■ stopped early — nothing (more) to do") }
 print(ok ? "■ result: OK — report: \(reportPath)" : "■ result: FAIL — report: \(reportPath)")
 exit(ok ? 0 : 1)

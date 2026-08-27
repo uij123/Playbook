@@ -186,3 +186,9 @@ Single display; no drag-and-drop capture; scrolls recorded but not compiled; con
 - **`a11y.role: "*"`** — wildcard role for targets anchored purely by title/description text (requires one of them), for UIs where the same logical thing surfaces as different roles.
 - **`judge.model`** — per-step model override (e.g. a cheap model for easy classifications).
 - **Studio** (`pb studio`) — local web UI: library + visual brick-tree editor over the same schema.
+
+## v0.3 — stages and graceful stops (the user-facing layer)
+
+- **`stages`** (top-level, optional) — the plain-language "boxes" a non-technical user sees: `[{ "title", "summary", "until": "<top-level step id>" }]`. Stage *k* covers the steps after the previous stage's `until` through its own. Presentation + intent only: the runner ignores stages, so they can never change behavior. The Studio's default Flow view renders one box per stage (loops and stop-gates called out visually) with the recorded micro-steps folded inside; **✨ Describe** asks the configured model to draft the description and stages (it writes *about* the playbook, never touches steps).
+- **`stop`** step — graceful early exit: with `"if_empty": "<var>"` the run ends **successfully** when the variable is empty (missing, null, `""`, `[]`, `{}`) and the remaining steps are reported `skipped`; without it, an unconditional stop. This is the deterministic "if none, don't do anything" gate — no model call involved. Reports carry `stopped_early: true`.
+- Run result semantics: `skipped` steps no longer fail a run; only real failures (without `continue`/`next_item`) do.

@@ -59,7 +59,9 @@ The compiler's refinement stage is model-agnostic — a 3-method provider interf
 ./pb studio    # → http://127.0.0.1:5177
 ```
 
-A local web UI (localhost-only): the **library** lists every playbook with its determinism score, judge count, secret usage, and last-run status; the **editor** renders the playbook as a tree of bricks — deterministic steps, blue `capture` bricks, amber `judge` decision bricks (with their choices as branches), purple `foreach` containers with nested children — every field editable, with add/move/delete, schema-validated saves, one-click runs with a live console, and run history. Playbook files stay the source of truth; the Studio is a view over them.
+A local web UI (localhost-only). The **library** lists every playbook with its determinism score, judge count, secret usage, and last-run status.
+
+Opening a playbook shows the **Flow view**: a short chain of plain-language boxes ("Check WhatsApp for receipts → if none, stop → for each receipt: read it and log it → …") with an editable *what this flow does* paragraph on top. Loops are marked 🔁, decision points ◇, vision 📷, and an `if none, stop` gate renders as an actual branch to an end node. Every box folds open to reveal the recorded micro-steps as editable bricks (amber `judge`, blue `capture`, purple `foreach` with nested children, orange `stop`); a **Details** toggle shows the whole brick tree. **✨ Describe** asks the configured model to draft the description and the box titles/summaries — it writes *about* the flow and can never change the steps. Saves are schema-validated, runs stream a live console, and every playbook keeps its run history. Playbook files stay the source of truth; the Studio is a view over them.
 
 ## Secrets (shareable playbooks, private credentials)
 

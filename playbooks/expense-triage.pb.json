@@ -1,9 +1,36 @@
 {
   "playbook": "expense-triage",
-  "version": "0.2.0",
-  "description": "Read expenses from my WhatsApp self-chat, match them against the visible Outlook calendar in Chrome, and log one line per expense (date, amount, description, person, sourcing/DD) into a fresh TextEdit document. Selectors captured from the expense-nav recording of 2026-08-27.",
+  "version": "0.3.0",
+  "description": "Checks my WhatsApp self-chat for receipt photos. If there are none, it stops — nothing else happens. Otherwise it opens each receipt, reads the amount, merchant and date off the image, checks my Outlook calendar to see which meeting it corresponds to, decides sourcing vs DD, and logs one line per expense into a TextEdit note.",
   "inputs": [],
   "credentials": [],
+  "stages": [
+    {
+      "title": "Check WhatsApp for receipts",
+      "summary": "Opens my self-chat ('Moi'), reads the visible messages, and lists up to 3 recent receipt photos. If there are none, the run ends here and nothing else is touched.",
+      "until": "s7b"
+    },
+    {
+      "title": "Open my Outlook calendar",
+      "summary": "Jumps to the signed-in Outlook tab in Chrome, opens the Calendar view, and reads the meetings on screen so each expense can be matched to one.",
+      "until": "s6"
+    },
+    {
+      "title": "Prepare the log",
+      "summary": "Opens a fresh TextEdit document and writes the header line the expenses will be logged under.",
+      "until": "s11"
+    },
+    {
+      "title": "For each receipt: read it and log it",
+      "summary": "Opens the photo full-size, reads the amount, merchant and date off the image, decides sourcing vs DD against the calendar, and types one log line. A receipt that will not open is skipped.",
+      "until": "s12"
+    },
+    {
+      "title": "Double-check the log",
+      "summary": "Verifies that at least one expense line actually landed in the note.",
+      "until": "s13"
+    }
+  ],
   "steps": [
     {
       "id": "s1",
@@ -118,6 +145,12 @@
       ],
       "into": "media_msgs",
       "output": "json"
+    },
+    {
+      "id": "s7b",
+      "intent": "If no receipts were found, stop — nothing to do",
+      "do": "stop",
+      "if_empty": "media_msgs"
     },
     {
       "id": "s4",

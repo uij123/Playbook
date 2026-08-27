@@ -50,6 +50,8 @@ public struct PBStep: Codable {
     public var `as`: String?
     public var steps: [PBStep]?
     public var max_iterations: Int?
+    // v0.3 — stop: graceful early exit when a variable is empty
+    public var if_empty: String?
 }
 
 public struct PBCaptureSpec: Codable {
@@ -218,9 +220,11 @@ public struct RunReport: Codable {
     public var strict: Bool
     public var result: String
     public var steps: [StepReport]
+    /// True when a `stop` step ended the run early (still a successful run).
+    public var stopped_early: Bool?
 
     public init(playbook: String, started: String, ended: String?, inputs: [String: String],
-                strict: Bool, result: String, steps: [StepReport]) {
+                strict: Bool, result: String, steps: [StepReport], stopped_early: Bool? = nil) {
         self.playbook = playbook
         self.started = started
         self.ended = ended
@@ -228,6 +232,7 @@ public struct RunReport: Codable {
         self.strict = strict
         self.result = result
         self.steps = steps
+        self.stopped_early = stopped_early
     }
 }
 
